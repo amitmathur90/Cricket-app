@@ -12,7 +12,13 @@ services:
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: npm install && npm run build --workspace=apps/backend
+    # --include=dev: Render sets NODE_ENV=production for the build step by
+    # default, which makes a plain `npm install` skip devDependencies —
+    # breaking `nest build` (needs @nestjs/cli) and, later, `migration:run`
+    # (needs ts-node via typeorm-ts-node-commonjs). Forcing dev deps in at
+    # build time avoids that; the app's own runtime NODE_ENV (set below)
+    # is unaffected either way since node_modules isn't reinstalled at start.
+    buildCommand: npm install --include=dev && npm run build --workspace=apps/backend
     startCommand: npm run migration:run --workspace=apps/backend && npm run start:prod --workspace=apps/backend
     envVars:
       - key: NODE_ENV
@@ -40,7 +46,9 @@ services:
     name: cricket-web-dashboard
     runtime: static
     rootDir: .
-    buildCommand: npm install && npm run build --workspace=apps/web
+    # Same --include=dev reasoning as cricket-backend above — vite,
+    # typescript, and @tailwindcss/vite are all devDependencies.
+    buildCommand: npm install --include=dev && npm run build --workspace=apps/web
     staticPublishPath: ./apps/web/dist
     envVars:
       - key: VITE_API_BASE_URL
