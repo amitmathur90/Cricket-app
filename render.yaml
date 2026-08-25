@@ -19,7 +19,12 @@ services:
     # build time avoids that; the app's own runtime NODE_ENV (set below)
     # is unaffected either way since node_modules isn't reinstalled at start.
     buildCommand: npm install --include=dev && npm run build --workspace=apps/backend
-    startCommand: npm run migration:run --workspace=apps/backend && npm run start:prod --workspace=apps/backend
+    # Runs migrations against the already-compiled dist/database/data-source.js
+    # instead of `npm run migration:run` (which uses typeorm-ts-node-commonjs —
+    # recompiling TypeScript via ts-node on every single boot). That added
+    # real, avoidable latency to every cold start on top of Render free tier's
+    # own sleep/wake delay — this only compiles once, at build time.
+    startCommand: npx typeorm migration:run -d apps/backend/dist/database/data-source.js && npm run start:prod --workspace=apps/backend
     envVars:
       - key: NODE_ENV
         value: production
