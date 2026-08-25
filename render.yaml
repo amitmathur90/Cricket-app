@@ -1,0 +1,53 @@
+databases:
+  - name: cricket-db
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  # NestJS API. Runs pending TypeORM migrations before starting each deploy
+  # — never uses synchronize:true in production (DB_SYNCHRONIZE is left
+  # unset, which the app's config.ts defaults to false).
+  - type: web
+    name: cricket-backend
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=apps/backend
+    startCommand: npm run migration:run --workspace=apps/backend && npm run start:prod --workspace=apps/backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cricket-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # Set to the deployed web dashboard's exact origin (e.g.
+      # https://cricket-dashboard.onrender.com) once its URL is known —
+      # Render assigns the subdomain at first deploy, so it can't be
+      # wired automatically here. Falls back to '*' (open) until set.
+      - key: CORS_ORIGIN
+        value: "*"
+
+  # Vite-built React admin dashboard, served as a static site. VITE_API_BASE_URL
+  # is baked in at build time, so it must be set to the backend's real URL
+  # (from the service above) BEFORE this service's first build — set it in
+  # the Render dashboard once the backend URL is known, then trigger a deploy.
+  - type: web
+    name: cricket-web-dashboard
+    runtime: static
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=apps/web
+    staticPublishPath: ./apps/web/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: ""
+    routes:
+      # SPA client-side routing — every path serves index.html, React Router
+      # takes it from there.
+      - type: rewrite
+        source: /*
+        destination: /index.html
