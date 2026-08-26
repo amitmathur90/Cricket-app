@@ -18,17 +18,20 @@ const LIVE_ITEMS: NavItem[] = [
   { label: 'Tournaments', icon: '🏆', path: '/tournaments' },
   { label: 'Players', icon: '🧑‍🤝‍🧑', path: '/players', minRole: 'tournament_admin' },
   { label: 'Matches / Schedule', icon: '📅', path: '/matches' },
+  { label: 'Venues', icon: '📍', path: '/venues' },
+  { label: 'Sponsors', icon: '🤝', path: '/sponsors' },
 ]
 
+// "Player Registration" isn't a separate nav entry — it's the "Register
+// Player" CTA on the Players list page (src/features/players/pages/
+// PlayerListPage.tsx), same as how Tournament creation isn't its own
+// sidebar item either.
 const SOON_ITEMS: NavItem[] = [
-  { label: 'Player Registration', icon: '📝' },
   { label: 'Captains', icon: '👤' },
   { label: 'Practice', icon: '🏋️' },
   { label: 'Live Score', icon: '📡' },
   { label: 'Statistics', icon: '📊' },
-  { label: 'Venues', icon: '📍' },
   { label: 'Officials', icon: '🧑‍⚖️' },
-  { label: 'Sponsors', icon: '🤝' },
   { label: 'Finance', icon: '💰' },
   { label: 'Awards', icon: '🏅' },
   { label: 'Reports', icon: '🗂️' },

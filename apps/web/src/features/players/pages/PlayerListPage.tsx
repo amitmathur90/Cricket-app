@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StatusPill } from '../../../shared/components/StatusPill'
 import { TextInput } from '../../../shared/components/FormPrimitives'
+import { RoleGate } from '../../../core/router/RoleGate'
 import { resolveMediaUrl } from '../../../core/api/client'
 import { usePlayers } from '../hooks/usePlayers'
 import { playerVerificationStatusTone } from '../statusTones'
@@ -92,9 +93,19 @@ export function PlayerListPage() {
 
   return (
     <div>
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Players</h1>
-        <p className="mt-1 text-sm text-text-secondary">Every player profile in your organization.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Players</h1>
+          <p className="mt-1 text-sm text-text-secondary">Every player profile in your organization.</p>
+        </div>
+        <RoleGate minRole="tournament_admin">
+          <Link
+            to="/players/create"
+            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-dark"
+          >
+            + Register Player
+          </Link>
+        </RoleGate>
       </div>
 
       <div className="mt-6 flex flex-col gap-3">
@@ -118,7 +129,18 @@ export function PlayerListPage() {
         {isError && <div className="p-6 text-sm text-negative">Could not load players. Try refreshing the page.</div>}
 
         {!isLoading && !isError && players && players.length === 0 && (
-          <div className="p-10 text-center text-sm text-text-muted">No players in this organization yet.</div>
+          <div className="p-10 text-center text-sm text-text-muted">
+            No players in this organization yet.{' '}
+            <RoleGate minRole="tournament_admin">
+              <>
+                Get started by{' '}
+                <Link to="/players/create" className="font-semibold text-primary hover:underline">
+                  registering one
+                </Link>
+                .
+              </>
+            </RoleGate>
+          </div>
         )}
 
         {!isLoading && !isError && players && players.length > 0 && filtered.length === 0 && (

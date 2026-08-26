@@ -10,6 +10,7 @@ import { TournamentCreatePage } from '../../features/tournaments/pages/Tournamen
 import { TournamentDetailPage } from '../../features/tournaments/pages/TournamentDetailPage'
 import { TeamDetailPage } from '../../features/teams/pages/TeamDetailPage'
 import { PlayerListPage } from '../../features/players/pages/PlayerListPage'
+import { PlayerCreatePage } from '../../features/players/pages/PlayerCreatePage'
 import { PlayerDetailPage } from '../../features/players/pages/PlayerDetailPage'
 import { MatchListPage } from '../../features/matches/pages/MatchListPage'
 import { MatchDetailPage } from '../../features/matches/pages/MatchDetailPage'
@@ -20,6 +21,11 @@ import { LiveAuctionRoomPage } from '../../features/auction/pages/LiveAuctionRoo
 import { AuctionHistoryPage } from '../../features/auction/pages/AuctionHistoryPage'
 import { TeamAuctionDashboardPage } from '../../features/auction/pages/TeamAuctionDashboardPage'
 import { AuctionSummaryPage } from '../../features/auction/pages/AuctionSummaryPage'
+import { VenueListPage } from '../../features/venues/pages/VenueListPage'
+import { VenueFormPage } from '../../features/venues/pages/VenueFormPage'
+import { VenueDetailPage } from '../../features/venues/pages/VenueDetailPage'
+import { SponsorListPage } from '../../features/sponsors/pages/SponsorListPage'
+import { SponsorFormPage } from '../../features/sponsors/pages/SponsorFormPage'
 
 export function AppRoutes() {
   return (
@@ -48,9 +54,19 @@ export function AppRoutes() {
           <Route path="/tournaments/:tournamentId/auction/:sessionId/summary" element={<AuctionSummaryPage />} />
 
           <Route path="/players" element={<PlayerListPage />} />
+          <Route path="/players/create" element={<PlayerCreatePage />} />
           <Route path="/players/:playerId" element={<PlayerDetailPage />} />
 
           <Route path="/matches" element={<MatchListPage />} />
+
+          <Route path="/venues" element={<VenueListPage />} />
+          <Route path="/venues/create" element={<VenueFormPage />} />
+          <Route path="/venues/:venueId" element={<VenueDetailPage />} />
+          <Route path="/venues/:venueId/edit" element={<VenueFormPage />} />
+
+          <Route path="/sponsors" element={<SponsorListPage />} />
+          <Route path="/sponsors/create" element={<SponsorFormPage />} />
+          <Route path="/sponsors/:sponsorId/edit" element={<SponsorFormPage />} />
 
           <Route path="*" element={<DashboardPage />} />
         </Route>
