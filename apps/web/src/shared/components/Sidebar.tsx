@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import type { OrgRole } from '../../types/organization'
 import { RoleGate } from '../../core/router/RoleGate'
+import { useTournaments } from '../../features/tournaments/hooks/useTournaments'
 
 interface NavItem {
   label: string
@@ -21,7 +22,6 @@ const LIVE_ITEMS: NavItem[] = [
 
 const SOON_ITEMS: NavItem[] = [
   { label: 'Player Registration', icon: '📝' },
-  { label: 'Auction', icon: '🔨' },
   { label: 'Captains', icon: '👤' },
   { label: 'Practice', icon: '🏋️' },
   { label: 'Live Score', icon: '📡' },
@@ -65,6 +65,37 @@ function NavRow({ item }: { item: NavItem }) {
   return item.minRole ? <RoleGate minRole={item.minRole}>{row}</RoleGate> : row
 }
 
+/** Sessions are tournament-scoped with no single global URL — mirrors
+ * admin_drawer.dart's "jump directly only when there's exactly one
+ * (auction-enabled) tournament, else land on the tournament list" pattern
+ * rather than a plain static link. */
+function AuctionNavRow() {
+  const navigate = useNavigate()
+  const { data: tournaments } = useTournaments()
+  const auctionTournaments = (tournaments ?? []).filter((t) => t.auctionEnabled)
+
+  function handleClick() {
+    if (auctionTournaments.length === 1) {
+      navigate(`/tournaments/${auctionTournaments[0].id}/auction`)
+    } else {
+      navigate('/tournaments')
+    }
+  }
+
+  const row = (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-white/70 transition hover:bg-white/5 hover:text-white"
+    >
+      <span className="w-5 text-center">🔨</span>
+      Auction
+    </button>
+  )
+
+  return <RoleGate minRole="tournament_admin">{row}</RoleGate>
+}
+
 export function Sidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col bg-navy px-3 py-5">
@@ -77,6 +108,7 @@ export function Sidebar() {
         {LIVE_ITEMS.map((item) => (
           <NavRow key={item.label} item={item} />
         ))}
+        <AuctionNavRow />
         <div className="my-3 h-px bg-white/10" />
         {SOON_ITEMS.map((item) => (
           <NavRow key={item.label} item={item} />

@@ -41,4 +41,31 @@ export class CreateAuctionSessionDto {
   @ValidateNested({ each: true })
   @Type(() => BidIncrementRuleDto)
   bidIncrementRules?: BidIncrementRuleDto[];
+
+  @ApiPropertyOptional({
+    description: 'Informational total time budget for the whole session, in minutes. Never enforced server-side.',
+    example: 180,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  durationMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: "Starting purse applied to every registered team when the session starts. Omit to leave each team's existing purse untouched.",
+    example: 15000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  defaultTeamPoints?: number;
+
+  @ApiPropertyOptional({
+    description: 'Max roster size per team; a team at this count can no longer bid ("SQUAD FULL"). Omit for no cap.',
+    example: 15,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  maxSquadSize?: number;
 }

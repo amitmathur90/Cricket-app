@@ -14,6 +14,9 @@ import { PlayerDetailPage } from '../../features/players/pages/PlayerDetailPage'
 import { MatchListPage } from '../../features/matches/pages/MatchListPage'
 import { MatchDetailPage } from '../../features/matches/pages/MatchDetailPage'
 import { MatchFormPage } from '../../features/matches/pages/MatchFormPage'
+import { AuctionSessionListPage } from '../../features/auction/pages/AuctionSessionListPage'
+import { AuctionPoolPage } from '../../features/auction/pages/AuctionPoolPage'
+import { LiveAuctionRoomPage } from '../../features/auction/pages/LiveAuctionRoomPage'
 
 export function AppRoutes() {
   return (
@@ -33,6 +36,10 @@ export function AppRoutes() {
           <Route path="/tournaments/:tournamentId/matches/create" element={<MatchFormPage />} />
           <Route path="/tournaments/:tournamentId/matches/:matchId" element={<MatchDetailPage />} />
           <Route path="/tournaments/:tournamentId/matches/:matchId/edit" element={<MatchFormPage />} />
+
+          <Route path="/tournaments/:tournamentId/auction" element={<AuctionSessionListPage />} />
+          <Route path="/tournaments/:tournamentId/auction/:sessionId/pool" element={<AuctionPoolPage />} />
+          <Route path="/tournaments/:tournamentId/auction/:sessionId" element={<LiveAuctionRoomPage />} />
 
           <Route path="/players" element={<PlayerListPage />} />
           <Route path="/players/:playerId" element={<PlayerDetailPage />} />

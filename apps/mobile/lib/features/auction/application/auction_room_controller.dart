@@ -65,6 +65,8 @@ class AuctionRoomState {
     this.bidHistory = const [],
     this.lastResult,
     this.errorMessage,
+    this.durationMinutes,
+    this.maxSquadSize,
   });
 
   final AuctionConnectionStatus connectionStatus;
@@ -81,6 +83,16 @@ class AuctionRoomState {
   final AuctionLotResult? lastResult;
   final String? errorMessage;
 
+  /// Informational total-time budget for the whole session, in minutes —
+  /// null when the session was created without one. Kept current via
+  /// `auction.stateSync`; never used to drive any countdown/auto-resolve
+  /// logic (there is none — see `AuctionCurrentLot`'s doc comment).
+  final int? durationMinutes;
+
+  /// Max roster size per team, if configured — kept current via
+  /// `auction.stateSync`. Per-team fullness is `AuctionLiveTeam.squadFull`.
+  final int? maxSquadSize;
+
   AuctionRoomState copyWith({
     AuctionConnectionStatus? connectionStatus,
     String? sessionStatus,
@@ -93,6 +105,8 @@ class AuctionRoomState {
     bool clearLastResult = false,
     String? errorMessage,
     bool clearError = false,
+    int? durationMinutes,
+    int? maxSquadSize,
   }) {
     return AuctionRoomState(
       connectionStatus: connectionStatus ?? this.connectionStatus,
@@ -103,6 +117,8 @@ class AuctionRoomState {
       bidHistory: bidHistory ?? this.bidHistory,
       lastResult: clearLastResult ? null : (lastResult ?? this.lastResult),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+      maxSquadSize: maxSquadSize ?? this.maxSquadSize,
     );
   }
 }
@@ -181,6 +197,8 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
       remainingPoolCount: sync.remainingPoolCount,
       teams: sync.teams,
       clearLastResult: true,
+      durationMinutes: sync.session.durationMinutes,
+      maxSquadSize: sync.session.maxSquadSize,
     );
   }
 
@@ -192,7 +210,9 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
         player: evt.player,
         basePrice: evt.basePrice,
         currentBidAmount: evt.basePrice,
-        currentLotEndsAt: evt.currentLotEndsAt,
+        // A freshly-opened lot is always unresolved — see
+        // AuctionPlayerUpEvent's doc comment.
+        resolved: false,
       ),
       bidHistory: const [],
       clearLastResult: true,
@@ -206,7 +226,6 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
         ? lot.copyWith(
             currentBidAmount: evt.amount,
             currentBidTeamId: evt.teamId,
-            currentLotEndsAt: evt.currentLotEndsAt,
           )
         : lot;
     state = state.copyWith(
@@ -238,7 +257,6 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
             currentBidAmount: evt.currentBidAmount,
             currentBidTeamId: evt.currentBidTeamId,
             clearCurrentBidTeamId: evt.currentBidTeamId == null,
-            currentLotEndsAt: evt.currentLotEndsAt,
           )
         : lot;
     state = state.copyWith(
@@ -250,19 +268,24 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
     );
   }
 
+  /// Handles `auction.playerSold` — the admin marked the current lot SOLD
+  /// (`POST .../mark-sold`). Flips the lot's `resolved` flag so the UI shows
+  /// the confirmation + "Next Player" prompt instead of bidding controls,
+  /// and applies the purse deduction the backend already made — no purse
+  /// change is ever predicted/applied optimistically while bids are merely
+  /// being placed (see `_onBidPlaced`, which never touches `state.teams`).
   void _onPlayerSold(Map<String, dynamic> json) {
     final evt = AuctionPlayerSoldEvent.fromJson(json);
+    final lot = state.currentLot;
+    final updatedLot =
+        (lot != null && lot.poolEntryId == evt.poolEntryId) ? lot.copyWith(resolved: true) : lot;
     final updatedTeams = state.teams
         .map((t) => t.tournamentTeamId == evt.soldToTeamId
-            ? AuctionLiveTeam(
-                tournamentTeamId: t.tournamentTeamId,
-                teamName: t.teamName,
-                purseTotal: t.purseTotal,
-                purseRemaining: evt.purseRemaining,
-              )
+            ? t.copyWith(purseRemaining: evt.purseRemaining)
             : t)
         .toList();
     state = state.copyWith(
+      currentLot: updatedLot,
       teams: updatedTeams,
       lastResult: AuctionLotResult.sold(
         playerId: evt.playerId,
@@ -272,9 +295,18 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
     );
   }
 
+  /// Handles `auction.playerUnsold` — the admin marked the current lot
+  /// UNSOLD (`POST .../mark-unsold`). Same `resolved` handling as
+  /// `_onPlayerSold`; no purse ever moves for an UNSOLD lot.
   void _onPlayerUnsold(Map<String, dynamic> json) {
     final evt = AuctionPlayerUnsoldEvent.fromJson(json);
-    state = state.copyWith(lastResult: AuctionLotResult.unsold(playerId: evt.playerId));
+    final lot = state.currentLot;
+    final updatedLot =
+        (lot != null && lot.poolEntryId == evt.poolEntryId) ? lot.copyWith(resolved: true) : lot;
+    state = state.copyWith(
+      currentLot: updatedLot,
+      lastResult: AuctionLotResult.unsold(playerId: evt.playerId),
+    );
   }
 
   void _onErrorEvent(Map<String, dynamic> json) {

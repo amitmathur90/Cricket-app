@@ -33,10 +33,15 @@ export interface BidIncrementRule {
 
 /**
  * A live auction event for one tournament. Tracks the lot currently under
- * the hammer (`currentPlayerId`/`currentBidAmount`/`currentBidTeamId`) and
- * the server-authoritative countdown deadline (`currentLotEndsAt`) for it.
- * All mutation of these "current lot" fields happens through
+ * the hammer (`currentPlayerId`/`currentBidAmount`/`currentBidTeamId`). All
+ * mutation of these "current lot" fields happens through
  * AuctionRealtimeService under a row lock so concurrent bids can't race.
+ *
+ * There is deliberately NO auto-timer/countdown driving lot resolution —
+ * the admin manually marks each lot SOLD or UNSOLD, then manually advances
+ * via "Next Player". `currentLotEndsAt` is kept as a column (nullable,
+ * always null going forward) rather than dropped, to avoid a destructive
+ * migration; nothing reads or writes it as a deadline anymore.
  */
 @Entity({ name: 'auction_sessions' })
 export class AuctionSession {
@@ -83,6 +88,24 @@ export class AuctionSession {
 
   @Column({ name: 'current_lot_ends_at', type: 'timestamptz', nullable: true })
   currentLotEndsAt: Date | null;
+
+  /** Informational only — a total time budget for the whole session (shown
+   * as a countdown in the UI), NOT a per-lot bidding deadline. Nothing
+   * server-side enforces this; it never forces a lot to resolve. */
+  @Column({ name: 'duration_minutes', type: 'int', nullable: true })
+  durationMinutes: number | null;
+
+  /** When set, starting the session resets every registered team's
+   * purseTotal/purseRemaining (for this tournament) to this value — "every
+   * team receives the configured default points". Null means leave each
+   * team's existing purse (set at registration time) untouched. */
+  @Column({ name: 'default_team_points', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  defaultTeamPoints: string | null;
+
+  /** When set, a team already at this many roster players (TeamPlayer rows
+   * for this tournament-team) can no longer place bids — "SQUAD FULL". */
+  @Column({ name: 'max_squad_size', type: 'int', nullable: true })
+  maxSquadSize: number | null;
 
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt: Date | null;

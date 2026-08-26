@@ -7,40 +7,72 @@ import '../../../../core/config/env.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/status_pill.dart';
+import '../../../players/application/players_providers.dart';
 import '../../../players/data/models/player.dart' show PlayerRoleX;
+import '../../../tournaments/application/tournaments_providers.dart';
 import '../../application/auction_providers.dart';
 import '../../application/auction_room_controller.dart';
+import '../../application/bid_increment.dart';
 import '../../data/models/auction_pool_entry.dart';
 import '../../data/models/auction_realtime_models.dart';
 
 /// The live auction room — rendered by AuctionSessionDetailScreen for
-/// sessions with status `live` or `paused`. Owns no state itself beyond the
-/// bid-entry form; all real-time auction state comes from
+/// sessions with status `live` or `paused`. Owns no state itself beyond
+/// admin-action busy tracking; all real-time auction state comes from
 /// [auctionRoomControllerProvider], a Socket.IO connection to the backend's
 /// `/auction` namespace (see auction_room_controller.dart for the
-/// event-handling details) — this view is presentation only, restyled to
-/// match the live-auction-room mockup, and must not touch that socket/state
-/// layer beyond adding the `auction.bidUndone` wiring it already exposes.
+/// event-handling details) — this view is presentation only, styled to
+/// match the rest of this app's light theme (`AppColors`), and must not
+/// touch that socket/state layer beyond adding the `auction.bidUndone`
+/// wiring it already exposes.
+///
+/// There is no auto-timer driving lot resolution anywhere in this screen —
+/// the backend rewrite removed lot auto-resolution entirely (see
+/// `AuctionRealtimeService`'s class doc comment). A lot stays open to bids
+/// until the admin explicitly marks it SOLD or UNSOLD
+/// (`_AdminControlsCard`), and `AuctionCurrentLot.resolved` (not a
+/// deadline) is what switches this screen from bidding controls to the
+/// SOLD/UNSOLD confirmation + "Next Player" prompt.
+///
+/// [_AuctionHeader], by contrast, DOES run a real ticking countdown — but
+/// it's a completely different concept: a display-only countdown against
+/// the session's total configured time budget
+/// (`AuctionSession.durationMinutes`, counted down from
+/// `AuctionSession.startedAt`), never a per-lot bidding deadline. Nothing
+/// server-side enforces it (see that field's doc comment); it's hidden
+/// entirely when the session has no `durationMinutes` configured.
 ///
 /// Also watches [auctionPoolListProvider] (a plain REST fetch, not part of
 /// the socket state) purely to enrich the current lot's display with two
 /// fields the WS payloads don't carry — lot number and player rating (see
 /// AuctionLotPlayer's doc comment) — and to compute each team's "players
-/// purchased" count for the Team Purse section. `listPool` returns every
-/// pool entry for the session in one call, so a single fetch on first watch
-/// covers every lot; it's invalidated only when a lot resolves (sold/
-/// unsold), which is the one thing that changes the purchased-count.
+/// purchased" count plus the header's Sold/Unsold/Remaining tallies.
+/// `listPool` returns every pool entry for the session in one call, so a
+/// single fetch on first watch covers every lot; it's invalidated only when
+/// a lot resolves (sold/unsold), which is the one thing that changes those
+/// counts.
+///
+/// Also watches [auctionSessionDetailProvider] (already used elsewhere in
+/// this feature to drive AuctionSessionDetailScreen) purely for
+/// `AuctionSession.startedAt` and `bidIncrementRules` — two fields the WS
+/// `auction.stateSync` payload doesn't carry
+/// (`AuctionRealtimeService.buildStateSyncPayload`'s `session` object is
+/// `{id, name, status, tournamentId, durationMinutes, maxSquadSize}` only),
+/// but which the plain "get one session" REST endpoint already returns for
+/// free (it serializes the full entity, no field projection) — so both are
+/// available with no backend change, just an extra `ref.watch` here.
 ///
 /// Note on roles: there is no team-owner-scoped "my team" identity anywhere
 /// in this feature (checked auction_providers.dart / auction_room_controller
-/// .dart) — the "Bidding as team" dropdown below lets the operator place a
-/// bid on behalf of *any* tournament team, and the admin controls further
-/// down are always rendered and rely on the backend rejecting the call with
-/// a 403 for non-admin callers (see _AdminControlsCard's doc comment). So
-/// this screen is a single organizer/bidding console, not a per-role split
-/// view — the mockup's "Your Team Purse" (implying one team's own panel) is
-/// adapted below as "Team Purse" listing every team, unchanged from before
-/// this restyle.
+/// .dart) — this screen is a single admin operator's control panel, bidding
+/// on behalf of *any* physical team in the room whenever that team's
+/// representative raises a paddle, not a remote team-owner self-service
+/// bidding flow. That's why [_TeamsSection] gives every team its own
+/// always-visible PLACE BID button (pre-computed amount, immediate submit)
+/// rather than a shared team-selector dropdown + one generic button — see
+/// that class's doc comment. The admin controls further down are always
+/// rendered too and rely on the backend rejecting the call with a 403 for
+/// non-admin callers (see _AdminControlsCard's doc comment).
 class LiveAuctionRoomView extends ConsumerStatefulWidget {
   const LiveAuctionRoomView({
     super.key,
@@ -58,26 +90,7 @@ class LiveAuctionRoomView extends ConsumerStatefulWidget {
 }
 
 class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
-  final _bidAmountController = TextEditingController();
-  String? _selectedTeamId;
   bool _adminBusy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Only used to re-derive the "PLACE BID ₹X" button label live as the
-    // user types — see the AnimatedBuilder around the bid button below.
-    _bidAmountController.addListener(_onBidAmountChanged);
-  }
-
-  void _onBidAmountChanged() => setState(() {});
-
-  @override
-  void dispose() {
-    _bidAmountController.removeListener(_onBidAmountChanged);
-    _bidAmountController.dispose();
-    super.dispose();
-  }
 
   AuctionSessionKey get _key => (tournamentId: widget.tournamentId, sessionId: widget.sessionId);
 
@@ -99,33 +112,6 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
     }
   }
 
-  void _placeBid(AuctionRoomController controller) {
-    final teamId = _selectedTeamId;
-    if (teamId == null) {
-      _snack('Select a team first');
-      return;
-    }
-    final amount = num.tryParse(_bidAmountController.text.trim());
-    if (amount == null || amount <= 0) {
-      _snack('Enter a valid bid amount');
-      return;
-    }
-    controller.placeBid(teamId: teamId, amount: amount);
-  }
-
-  /// Client-side suggestion only (shown as a hint/preview) — mirrors the
-  /// backend's default increment formula (computeMinIncrement in
-  /// auction-bid-increment.util.ts) for sessions with no custom
-  /// bidIncrementRules, which is all sessions created by this M1 UI. The
-  /// backend is the sole source of truth for what it actually accepts.
-  num _suggestedNextBid(String currentBidAmount) {
-    final currentBid = num.tryParse(currentBidAmount) ?? 0;
-    final unit = currentBid >= 100000 ? 5000 : (currentBid >= 10000 ? 1000 : 100);
-    final raw = currentBid * 0.05;
-    final increment = raw > unit ? (raw / unit).ceil() * unit : unit;
-    return currentBid + increment;
-  }
-
   AuctionPlayerPoolEntry? _poolEntryFor(List<AuctionPlayerPoolEntry> pool, String poolEntryId) {
     for (final entry in pool) {
       if (entry.id == poolEntryId) return entry;
@@ -142,19 +128,21 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
         _snack(next.errorMessage!);
         controller.dismissError();
       }
-      // The session can complete either via a manual "next lot" or the lot
-      // timer naturally expiring on the last lot — either way, once the
-      // room reports `completed`, refresh the outer session snapshot so
-      // AuctionSessionDetailScreen switches away from this view.
+      // The session completes when the admin clicks "Next Player" on the
+      // last lot (there is no auto-completion — see this file's class doc
+      // comment) — once the room reports `completed`, refresh the outer
+      // session snapshot so AuctionSessionDetailScreen switches away from
+      // this view.
       if (next.sessionStatus == 'completed' && previous?.sessionStatus != 'completed') {
         ref.invalidate(auctionSessionDetailProvider(_key));
       }
       // A lot just resolved (sold/unsold) — the only thing that changes
-      // each team's "players purchased" count in the Team Purse section
-      // below, so refresh the pool listing that count is derived from.
-      // (AuctionLotResult has no `==` override, so this compares object
-      // identity: true only when a *new* result was set, not on unrelated
-      // rebuilds that just carry the previous one forward.)
+      // each team's "players purchased" count and the header's
+      // Sold/Unsold/Remaining tallies, so refresh the pool listing those
+      // are derived from. (AuctionLotResult has no `==` override, so this
+      // compares object identity: true only when a *new* result was set,
+      // not on unrelated rebuilds that just carry the previous one
+      // forward.)
       if (next.lastResult != null && !identical(next.lastResult, previous?.lastResult)) {
         ref.invalidate(auctionPoolListProvider(_key));
       }
@@ -162,9 +150,12 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
 
     final roomState = ref.watch(auctionRoomControllerProvider(widget.sessionId));
     final pool = ref.watch(auctionPoolListProvider(_key)).valueOrNull ?? const <AuctionPlayerPoolEntry>[];
+    final sessionDetail = ref.watch(auctionSessionDetailProvider(_key)).valueOrNull;
+    final tournamentDetail = ref.watch(tournamentDetailProvider(widget.tournamentId)).valueOrNull;
     final lot = roomState.currentLot;
     final isPaused = roomState.sessionStatus == 'paused';
     final hasActiveBid = roomState.bidHistory.any((b) => !b.voided);
+    final isResolved = lot?.resolved ?? false;
 
     String? leadingTeamName;
     if (lot != null && lot.currentBidTeamId != null) {
@@ -172,20 +163,27 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
       leadingTeamName = matches.isEmpty ? null : matches.first.teamName;
     }
 
+    final soldCount = pool.where((e) => e.status == AuctionPoolStatus.sold).length;
+    final unsoldCount = pool.where((e) => e.status == AuctionPoolStatus.unsold).length;
+    // "Remaining" = not yet resolved (pending lots plus whichever one is
+    // currently under the hammer) — everything in the pool minus the two
+    // resolved buckets above.
+    final remainingCount = pool.length - soldCount - unsoldCount;
+
+    final currentBidAmount = num.tryParse(lot?.currentBidAmount ?? lot?.basePrice ?? '') ?? 0;
+    final nextBidAmount = computeNextBid(currentBidAmount, sessionDetail?.bidIncrementRules);
+
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Text(
-                'Live Auction',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const Spacer(),
-              _StatusIndicator(connectionStatus: roomState.connectionStatus, isPaused: isPaused),
-            ],
-          ),
+        _AuctionHeader(
+          tournamentName: tournamentDetail?.name,
+          startedAt: sessionDetail?.startedAt,
+          durationMinutes: roomState.durationMinutes,
+          soldCount: soldCount,
+          unsoldCount: unsoldCount,
+          remainingCount: remainingCount,
+          connectionStatus: roomState.connectionStatus,
+          isPaused: isPaused,
         ),
         if (roomState.lastResult != null) _ResultBanner(result: roomState.lastResult!),
         Expanded(
@@ -195,72 +193,38 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
                   padding: const EdgeInsets.only(bottom: 24),
                   children: [
                     _CurrentLotCard(lot: lot, poolEntry: _poolEntryFor(pool, lot.poolEntryId)),
-                    _CurrentBidCard(lot: lot, leadingTeamName: leadingTeamName),
+                    _CurrentBidCard(
+                      lot: lot,
+                      leadingTeamName: leadingTeamName,
+                      nextBidAmount: nextBidAmount,
+                    ),
                     _TeamBidTicker(bidHistory: roomState.bidHistory),
-                    Card(
-                      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Place a bid', style: Theme.of(context).textTheme.labelLarge),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: DropdownButtonFormField<String>(
-                                    initialValue: _selectedTeamId,
-                                    decoration: const InputDecoration(labelText: 'Bidding as team'),
-                                    items: roomState.teams
-                                        .map((t) => DropdownMenuItem(
-                                              value: t.tournamentTeamId,
-                                              child: Text(t.teamName),
-                                            ))
-                                        .toList(),
-                                    onChanged: (value) => setState(() => _selectedTeamId = value),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _bidAmountController,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    decoration: InputDecoration(
-                                      labelText: 'Bid amount (₹)',
-                                      hintText:
-                                          '₹${_suggestedNextBid(lot.currentBidAmount ?? lot.basePrice)}',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: FilledButton(
-                                onPressed: () => _placeBid(controller),
-                                child: Text(
-                                  'PLACE BID  ₹${(num.tryParse(_bidAmountController.text.trim()) ?? _suggestedNextBid(lot.currentBidAmount ?? lot.basePrice)).toString()}',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    if (isResolved) const _LotResolvedPrompt(),
+                    _TeamsSection(
+                      teams: roomState.teams,
+                      pool: pool,
+                      maxSquadSize: roomState.maxSquadSize,
+                      canBid: !isResolved && !isPaused && !_adminBusy,
+                      nextBidAmount: nextBidAmount,
+                      onPlaceBid: (teamId) => controller.placeBid(teamId: teamId, amount: nextBidAmount),
                     ),
                     _AdminControlsCard(
                       isPaused: isPaused,
                       busy: _adminBusy,
                       hasActiveBid: hasActiveBid,
+                      isResolved: isResolved,
                       onPause: () => _runAdminAction(() => ref
                           .read(auctionRepositoryProvider)
                           .pauseSession(widget.organizationId, widget.tournamentId, widget.sessionId)),
                       onResume: () => _runAdminAction(() => ref
                           .read(auctionRepositoryProvider)
                           .resumeSession(widget.organizationId, widget.tournamentId, widget.sessionId)),
+                      onMarkSold: () => _runAdminAction(() => ref
+                          .read(auctionRepositoryProvider)
+                          .markSold(widget.organizationId, widget.tournamentId, widget.sessionId)),
+                      onMarkUnsold: () => _runAdminAction(() => ref
+                          .read(auctionRepositoryProvider)
+                          .markUnsold(widget.organizationId, widget.tournamentId, widget.sessionId)),
                       onNextLot: () => _runAdminAction(() => ref
                           .read(auctionRepositoryProvider)
                           .nextLot(widget.organizationId, widget.tournamentId, widget.sessionId)),
@@ -269,11 +233,207 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
                           .undoLastBid(widget.organizationId, widget.tournamentId, widget.sessionId)),
                     ),
                     _BidHistorySection(bidHistory: roomState.bidHistory),
-                    _TeamPurseSection(teams: roomState.teams, pool: pool),
                   ],
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// Formats a possibly-fractional amount for display, dropping a trailing
+/// ".0" for whole numbers (`computeNextBid` returns a `num` that's often a
+/// plain `double` arithmetic result) rather than showing "₹900.0".
+String _money(num value) =>
+    value == value.roundToDouble() ? value.toInt().toString() : value.toStringAsFixed(2);
+
+/// Header banner: "LIVE PLAYER AUCTION" branding, the tournament name, an
+/// optional live countdown against the session's total time budget, and
+/// the pool-wide Sold/Unsold/Remaining counts — plus the existing
+/// connection/pause status pill (moved here from the plain "Live Auction"
+/// title bar this replaces).
+///
+/// The countdown is genuinely a live `Timer.periodic`, ticking once a
+/// second down to zero — not a static value computed once at build time —
+/// but it is completely unrelated to the OLD per-lot auto-resolve timer the
+/// backend rewrite removed (see LiveAuctionRoomView's class doc comment):
+/// this counts down the WHOLE SESSION's time budget
+/// (`startedAt + durationMinutes`), is purely informational (nothing
+/// server-side enforces it), and never resolves a lot or advances the
+/// auction on reaching zero — it simply stops at 00:00:00. When
+/// [durationMinutes] is null (a session created without a time budget) no
+/// countdown row is shown at all, rather than fabricating one.
+class _AuctionHeader extends StatefulWidget {
+  const _AuctionHeader({
+    required this.tournamentName,
+    required this.startedAt,
+    required this.durationMinutes,
+    required this.soldCount,
+    required this.unsoldCount,
+    required this.remainingCount,
+    required this.connectionStatus,
+    required this.isPaused,
+  });
+
+  final String? tournamentName;
+  final DateTime? startedAt;
+  final int? durationMinutes;
+  final int soldCount;
+  final int unsoldCount;
+  final int remainingCount;
+  final AuctionConnectionStatus connectionStatus;
+  final bool isPaused;
+
+  @override
+  State<_AuctionHeader> createState() => _AuctionHeaderState();
+}
+
+class _AuctionHeaderState extends State<_AuctionHeader> {
+  Timer? _ticker;
+  Duration? _remaining;
+
+  @override
+  void initState() {
+    super.initState();
+    _recompute();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _recompute());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AuctionHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startedAt != widget.startedAt || oldWidget.durationMinutes != widget.durationMinutes) {
+      _recompute();
+    }
+  }
+
+  void _recompute() {
+    final startedAt = widget.startedAt;
+    final durationMinutes = widget.durationMinutes;
+    if (startedAt == null || durationMinutes == null) {
+      if (_remaining != null && mounted) setState(() => _remaining = null);
+      return;
+    }
+    final deadline = startedAt.add(Duration(minutes: durationMinutes));
+    final remaining = deadline.difference(DateTime.now());
+    if (!mounted) return;
+    setState(() => _remaining = remaining.isNegative ? Duration.zero : remaining);
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  static String _format(Duration d) {
+    final hours = d.inHours.toString().padLeft(2, '0');
+    final minutes = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = _remaining;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'LIVE PLAYER AUCTION',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                    if (widget.tournamentName != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.tournamentName!,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _StatusIndicator(connectionStatus: widget.connectionStatus, isPaused: widget.isPaused),
+            ],
+          ),
+          if (remaining != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.timer_outlined, size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  'Auction Time Remaining: ${_format(remaining)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _HeaderCountChip(label: 'Players Sold', value: widget.soldCount, color: AppColors.primary),
+              const SizedBox(width: 8),
+              _HeaderCountChip(label: 'Players Unsold', value: widget.unsoldCount, color: AppColors.negative),
+              const SizedBox(width: 8),
+              _HeaderCountChip(
+                  label: 'Players Remaining', value: widget.remainingCount, color: AppColors.info),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderCountChip extends StatelessWidget {
+  const _HeaderCountChip({required this.label, required this.value, required this.color});
+
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text('$value', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: color)),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -344,11 +504,24 @@ class _ResultBanner extends StatelessWidget {
   }
 }
 
-/// Player photo, identity, and the base-price/rating stat row — the
-/// mockup's "player-up card". The current-bid amount and current leading
-/// team moved out of this card and into [_CurrentBidCard] below, matching
+/// Player photo, identity, base-price/rating stat row, and (when available)
+/// batting/bowling style — the mockup's "player-up card". The current-bid
+/// amount and current leading team live in [_CurrentBidCard] below, matching
 /// the mockup's separate tinted "current bid" box.
-class _CurrentLotCard extends StatelessWidget {
+///
+/// `battingStyle`/`bowlingStyle` are real `Player` entity fields (see
+/// player.entity.ts) but the WS `auction.playerUp`/`auction.stateSync`
+/// payloads' `player` object only ever projects `{id, fullName, role,
+/// photoUrl}` (`AuctionRealtimeService.buildStateSyncPayload`/
+/// `startSession`/`advanceToNextLot`) — neither style field is in the wire
+/// payload for this lot. Rather than leaving them out entirely, this card
+/// does a cheap supplementary fetch of the player's full org-level profile
+/// (`playerDetailProvider`, `GET .../players/:playerId` — a pre-existing
+/// backend endpoint, `PlayersController.findOne`) keyed by the lot's player
+/// id, so it refetches automatically whenever the lot changes. While that
+/// fetch is in flight (or if both styles are genuinely unset for this
+/// player), the styles row is simply omitted — never fabricated.
+class _CurrentLotCard extends ConsumerWidget {
   const _CurrentLotCard({required this.lot, required this.poolEntry});
 
   final AuctionCurrentLot lot;
@@ -361,8 +534,11 @@ class _CurrentLotCard extends StatelessWidget {
   final AuctionPlayerPoolEntry? poolEntry;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final rating = poolEntry?.player?.rating ?? lot.player.rating;
+    final playerDetail = ref.watch(playerDetailProvider(lot.player.id)).valueOrNull;
+    final battingStyle = playerDetail?.battingStyle;
+    final bowlingStyle = playerDetail?.bowlingStyle;
 
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -411,6 +587,19 @@ class _CurrentLotCard extends StatelessWidget {
                         lot.player.role.label,
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
                       ),
+                      if (battingStyle != null || bowlingStyle != null) ...[
+                        const SizedBox(height: 6),
+                        if (battingStyle != null)
+                          Text(
+                            'Batting: $battingStyle',
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                          ),
+                        if (bowlingStyle != null)
+                          Text(
+                            'Bowling: $bowlingStyle',
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -438,16 +627,24 @@ class _CurrentLotCard extends StatelessWidget {
   }
 }
 
-/// The mockup's tinted "current bid" box: CURRENT BID amount, a live
-/// countdown to when this lot auto-resolves (real data — `currentLotEndsAt`
-/// comes straight off `AuctionCurrentLot`, populated from the socket state
-/// and reset on every accepted bid; see auction_room_controller.dart), and
-/// which team currently holds the lead.
+/// The tinted "current bid" box: CURRENT BID amount, whether the lot is
+/// still open to bids or has been resolved (SOLD/UNSOLD — real data,
+/// `AuctionCurrentLot.resolved`, populated from the socket state; there is
+/// no timer/deadline anymore, see this file's class doc comment), which
+/// team currently holds the lead, and — while the lot is still open — an
+/// explicit "Next Bid" preview.
+///
+/// [nextBidAmount] mirrors the backend's tiered increment computation
+/// (`computeMinIncrement` in bid_increment.dart, kept in lockstep with
+/// auction-bid-increment.util.ts) rather than a separately-diverging
+/// formula, so this preview is accurate for sessions with a custom
+/// `bidIncrementRules` schedule, not just the flat 5% default.
 class _CurrentBidCard extends StatelessWidget {
-  const _CurrentBidCard({required this.lot, required this.leadingTeamName});
+  const _CurrentBidCard({required this.lot, required this.leadingTeamName, required this.nextBidAmount});
 
   final AuctionCurrentLot lot;
   final String? leadingTeamName;
+  final num nextBidAmount;
 
   @override
   Widget build(BuildContext context) {
@@ -486,7 +683,7 @@ class _CurrentBidCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'NEXT PLAYER IN',
+                      'LOT STATUS',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -495,10 +692,14 @@ class _CurrentBidCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    if (lot.currentLotEndsAt != null)
-                      _NextPlayerCountdown(endsAt: lot.currentLotEndsAt!)
-                    else
-                      const Text('—', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    Text(
+                      lot.resolved ? 'Resolved' : 'Bidding open',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: lot.resolved ? AppColors.textSecondary : AppColors.primaryDark,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -507,7 +708,7 @@ class _CurrentBidCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'BY',
+                      'HIGHEST BIDDER',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -527,6 +728,25 @@ class _CurrentBidCard extends StatelessWidget {
               ),
             ],
           ),
+          if (!lot.resolved) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.trending_up, size: 16, color: AppColors.primaryDark),
+                const SizedBox(width: 6),
+                Text(
+                  'Next Bid  ₹${_money(nextBidAmount)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -644,25 +864,27 @@ class _TeamBidTicker extends StatelessWidget {
   }
 }
 
-/// Start/Pause/Resume/Resolve-lot/Undo — already live on this screen (not
-/// the session detail screen) prior to this redesign, so no navigation or
-/// lifecycle change was needed to consolidate them here; this just groups
-/// them under a labelled panel matching the mockup's "Auction Controls"
-/// block and adds the new Undo-last-bid action.
+/// Start/Pause/Resume/Sold/Unsold/Next-Player/Undo — already live on this
+/// screen (not the session detail screen) prior to this redesign, so no
+/// navigation or lifecycle change was needed to consolidate them here; this
+/// just groups them under a labelled panel matching this screen's other
+/// panels.
 ///
-/// Two mockup controls are deliberately NOT here:
-///  - "Extend timer": the backend has no manual-extend endpoint
-///    (auction.controller.ts exposes only start/pause/resume/next-lot/
-///    undo-last-bid) — it auto-extends the lot countdown by
-///    REBID_EXTENSION_MS on every accepted bid instead
-///    (auction-realtime.service.ts). Wiring a button to nothing would be
-///    faking a capability that isn't there.
-///  - Separate "Mark sold" / "Mark unsold": there's no such pair of
-///    endpoints either. `next-lot` (labelled "Resolve lot & next" here)
-///    IS that action, merged: `manualNextLot` force-resolves the current
-///    lot — sold to the leading bid if there is one, unsold otherwise —
-///    and advances, in one call (auction-realtime.service.ts,
-///    `manualNextLot` -> `resolveLot({ force: true })`).
+/// SOLD/UNSOLD/NEXT PLAYER are three separate endpoints now, matching the
+/// backend rewrite (`auction.controller.ts` exposes `mark-sold`,
+/// `mark-unsold`, and `next-lot` as distinct calls —
+/// `AuctionRealtimeService.markSold`/`markUnsold`/`advanceToNextLot`).
+/// SOLD/UNSOLD are enabled while the current lot is unresolved (SOLD also
+/// requires a current bid, mirroring the backend's own check — "No bids
+/// have been placed on this lot — mark it UNSOLD instead"); NEXT PLAYER is
+/// enabled only once the lot has been resolved (the backend rejects
+/// `next-lot` while a lot is still `IN_PROGRESS`).
+///
+/// "Extend timer" from an earlier reference mockup is deliberately NOT
+/// here: there is no timer anywhere in this spec, manual or automatic, that
+/// resolves a lot — see this file's class doc comment. (The header's
+/// Auction Time Remaining countdown is a separate, purely informational
+/// session-wide budget with no "extend" action of its own.)
 ///
 /// "Start" isn't here either — it only applies to a `scheduled` session,
 /// which renders PoolManagementView instead of this view (see
@@ -672,14 +894,17 @@ class _TeamBidTicker extends StatelessWidget {
 /// other admin action in this app; there is no user-role check in this
 /// widget tree at all (see the class doc comment on LiveAuctionRoomView), a
 /// non-admin caller just gets the 403 surfaced as a snackbar via
-/// _runAdminAction/ApiException. This redesign does not change that.
+/// _runAdminAction/ApiException.
 class _AdminControlsCard extends StatelessWidget {
   const _AdminControlsCard({
     required this.isPaused,
     required this.busy,
     required this.hasActiveBid,
+    required this.isResolved,
     required this.onPause,
     required this.onResume,
+    required this.onMarkSold,
+    required this.onMarkUnsold,
     required this.onNextLot,
     required this.onUndoLastBid,
   });
@@ -687,13 +912,23 @@ class _AdminControlsCard extends StatelessWidget {
   final bool isPaused;
   final bool busy;
   final bool hasActiveBid;
+
+  /// True once the current lot has been marked SOLD/UNSOLD
+  /// (`AuctionCurrentLot.resolved`). This card is only ever rendered by
+  /// LiveAuctionRoomView while a current lot exists, so `isResolved` alone
+  /// is enough to gate SOLD/UNSOLD vs. NEXT PLAYER.
+  final bool isResolved;
+
   final Future<void> Function() onPause;
   final Future<void> Function() onResume;
+  final Future<void> Function() onMarkSold;
+  final Future<void> Function() onMarkUnsold;
   final Future<void> Function() onNextLot;
   final Future<void> Function() onUndoLastBid;
 
   @override
   Widget build(BuildContext context) {
+    final lotOpen = !isResolved;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Padding(
@@ -722,10 +957,23 @@ class _AdminControlsCard extends StatelessWidget {
                     icon: const Icon(Icons.pause),
                     label: const Text('Pause'),
                   ),
+                FilledButton.icon(
+                  onPressed: (busy || !lotOpen || !hasActiveBid) ? null : onMarkSold,
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text('SOLD'),
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+                ),
                 OutlinedButton.icon(
-                  onPressed: busy ? null : onNextLot,
+                  onPressed: (busy || !lotOpen) ? null : onMarkUnsold,
+                  icon: const Icon(Icons.block),
+                  label: const Text('UNSOLD'),
+                  style: OutlinedButton.styleFrom(foregroundColor: AppColors.textSecondary),
+                ),
+                FilledButton.icon(
+                  onPressed: (busy || !isResolved) ? null : onNextLot,
                   icon: const Icon(Icons.skip_next),
-                  label: const Text('Resolve lot & next'),
+                  label: const Text('NEXT PLAYER'),
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.info),
                 ),
                 OutlinedButton.icon(
                   onPressed: (busy || !hasActiveBid) ? null : onUndoLastBid,
@@ -737,6 +985,43 @@ class _AdminControlsCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Shown once the current lot is resolved (`AuctionCurrentLot.resolved`) —
+/// the SOLD/UNSOLD outcome itself is already shown by `_ResultBanner`
+/// above; this just points the operator at the one valid next action (NEXT
+/// PLAYER, in `_AdminControlsCard` below), matching the spec's
+/// "confirmation + Next Player prompt instead of bidding controls". The
+/// per-team PLACE BID buttons in [_TeamsSection] are also disabled while
+/// resolved (see `canBid` there), so this banner and that disabled state
+/// agree on there being nothing left to bid on.
+class _LotResolvedPrompt extends StatelessWidget {
+  const _LotResolvedPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.pageBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.arrow_downward, size: 18, color: AppColors.textSecondary),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This lot is resolved. Tap NEXT PLAYER below to continue the auction.',
+              style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -821,27 +1106,57 @@ class _BidHistorySection extends StatelessWidget {
   }
 }
 
-/// Every team's Starting/Spent/Remaining Points and players purchased.
-/// "Points" is a deliberate, screen-scoped relabelling of what the data
-/// layer still calls "purse" everywhere else (`AuctionLiveTeam.purseTotal`/
-/// `purseRemaining`, the REST/WS field names) — display-only, per explicit
-/// product direction for this screen; no backend field or other screen's
-/// copy changes.
+/// Every team's Points/Squad plus a dedicated, always-visible PLACE BID
+/// button — this screen models a single admin operator bidding on behalf of
+/// physical teams in the room (see LiveAuctionRoomView's class doc comment
+/// on there being no team-owner-scoped "my team" identity anywhere in this
+/// feature), not remote team-owners self-service bidding for themselves.
 ///
-/// `purseTotal`/`purseRemaining` come straight from `auction.stateSync`'s
-/// `teams[]` (live-updating). "Spent" isn't sent separately — it's derived
-/// here as `purseTotal - purseRemaining`. "Players Purchased" isn't in the
-/// live team payload either, so it's derived by counting this team's sold
-/// pool entries out of the full pool listing (`auctionPoolListProvider`),
-/// refreshed whenever a lot resolves (see the `ref.listen` block above).
+/// A prior pass modeled bidding as one shared "Place a bid" card: a
+/// team-selector dropdown, a free-text amount field, and one generic
+/// submit button. That fit a self-service model where the bidder already
+/// knows which team they are; it's the wrong shape for an operator running
+/// a physical room, who needs to react instantly to whichever team's
+/// paddle just went up without first hunting them in a dropdown. So each
+/// team gets its own card here with its own button, pre-computed to the
+/// exact next valid amount (mirroring the backend's tiered increment via
+/// `computeNextBid` — see bid_increment.dart) — tapping it submits that
+/// bid immediately, with no manual amount entry and no separate confirm
+/// step, matching how a physical auction room actually runs.
 ///
-/// Lists every team, not just "your" team — see LiveAuctionRoomView's class
-/// doc comment for why (no team-owner identity exists in this feature).
-class _TeamPurseSection extends StatelessWidget {
-  const _TeamPurseSection({required this.teams, required this.pool});
+/// Replaces the previous standalone "Team Purse" section (which only
+/// listed Starting/Spent/Remaining points) — this is now the one place
+/// showing each team's live status. "Squad" is computed from this
+/// session's own sold pool entries per team (`_playersPurchased`), not a
+/// true tournament-wide roster count — the live payloads
+/// (`AuctionLiveTeam`) only expose a `squadFull` boolean
+/// (`AuctionRealtimeService.isSquadFull`, computed from the real
+/// `TeamPlayer` roster count server-side), not the underlying count
+/// itself, so a team that already had roster entries before this auction
+/// started could show `squadFull: true` while this card's fraction still
+/// reads under `maxSquadSize`. The PLACE BID button always defers to that
+/// authoritative `squadFull` flag (never just the fraction shown) for
+/// deciding when to show "SQUAD FULL", so it can't go stale.
+class _TeamsSection extends StatelessWidget {
+  const _TeamsSection({
+    required this.teams,
+    required this.pool,
+    required this.maxSquadSize,
+    required this.canBid,
+    required this.nextBidAmount,
+    required this.onPlaceBid,
+  });
 
   final List<AuctionLiveTeam> teams;
   final List<AuctionPlayerPoolEntry> pool;
+  final int? maxSquadSize;
+
+  /// True while the current lot is open to bids (unresolved), the session
+  /// isn't paused, and no admin action is already in flight — team-specific
+  /// squad-fullness is layered on top of this per card, not baked in here.
+  final bool canBid;
+  final num nextBidAmount;
+  final void Function(String teamId) onPlaceBid;
 
   int _playersPurchased(AuctionLiveTeam team) => pool
       .where((e) => e.status == AuctionPoolStatus.sold && e.soldToTeamId == team.tournamentTeamId)
@@ -851,32 +1166,47 @@ class _TeamPurseSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (teams.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Team Purse', style: Theme.of(context).textTheme.titleMedium),
+          Text('Teams', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           for (final team in teams)
-            _TeamPurseCard(team: team, playersPurchased: _playersPurchased(team)),
+            _TeamActionCard(
+              team: team,
+              playersPurchased: _playersPurchased(team),
+              maxSquadSize: maxSquadSize,
+              canBid: canBid,
+              nextBidAmount: nextBidAmount,
+              onPlaceBid: () => onPlaceBid(team.tournamentTeamId),
+            ),
         ],
       ),
     );
   }
 }
 
-class _TeamPurseCard extends StatelessWidget {
-  const _TeamPurseCard({required this.team, required this.playersPurchased});
+class _TeamActionCard extends StatelessWidget {
+  const _TeamActionCard({
+    required this.team,
+    required this.playersPurchased,
+    required this.maxSquadSize,
+    required this.canBid,
+    required this.nextBidAmount,
+    required this.onPlaceBid,
+  });
 
   final AuctionLiveTeam team;
   final int playersPurchased;
+  final int? maxSquadSize;
+  final bool canBid;
+  final num nextBidAmount;
+  final VoidCallback onPlaceBid;
 
   @override
   Widget build(BuildContext context) {
-    final total = num.tryParse(team.purseTotal ?? '');
-    final remaining = num.tryParse(team.purseRemaining ?? '');
-    final spent = (total != null && remaining != null) ? (total - remaining) : null;
-
+    final canActuallyBid = canBid && !team.squadFull;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -886,33 +1216,23 @@ class _TeamPurseCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                // The colored dot/badge is this team's rotating avatar
+                // color, keyed by a stable hash of its name — see
+                // _teamAvatarColor's doc comment.
                 CircleAvatar(
-                  radius: 16,
+                  radius: 14,
                   backgroundColor: _teamAvatarColor(team.teamName),
                   foregroundColor: Colors.white,
-                  child: Text(_teamInitial(team.teamName), style: const TextStyle(fontSize: 13)),
+                  child: Text(_teamInitial(team.teamName), style: const TextStyle(fontSize: 12)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(team.teamName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                Text(
-                  '$playersPurchased players',
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _LotStat(
-                    label: 'STARTING POINTS',
-                    value: team.purseTotal != null ? '₹${team.purseTotal}' : '—',
+                  child: Text(
+                    team.teamName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Expanded(
-                  child: _LotStat(label: 'SPENT', value: spent != null ? '₹${spent.toStringAsFixed(2)}' : '—'),
                 ),
               ],
             ),
@@ -921,15 +1241,40 @@ class _TeamPurseCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _LotStat(
-                    label: 'REMAINING',
+                    label: 'POINTS',
                     value: team.purseRemaining != null ? '₹${team.purseRemaining}' : '—',
                     emphasize: true,
                   ),
                 ),
                 Expanded(
-                  child: _LotStat(label: 'PLAYERS PURCHASED', value: '$playersPurchased'),
+                  child: _LotStat(
+                    label: 'SQUAD',
+                    value: maxSquadSize != null ? '$playersPurchased/$maxSquadSize' : '$playersPurchased',
+                  ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: team.squadFull
+                  ? OutlinedButton(
+                      onPressed: null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.negative,
+                        disabledForegroundColor: AppColors.negative,
+                        side: const BorderSide(color: AppColors.negative),
+                      ),
+                      child: const Text('SQUAD FULL', style: TextStyle(fontWeight: FontWeight.bold)),
+                    )
+                  : FilledButton(
+                      onPressed: canActuallyBid ? onPlaceBid : null,
+                      child: Text(
+                        'PLACE BID  ₹${_money(nextBidAmount)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -938,60 +1283,10 @@ class _TeamPurseCard extends StatelessWidget {
   }
 }
 
-/// A live "M:SS" countdown to [endsAt] — used inside [_CurrentBidCard] as
-/// the mockup's "Next Player" timer value. Ticks every second purely to
-/// re-render; the actual deadline is server-driven (`currentLotEndsAt` on
-/// the socket state) and gets reset by the controller on every accepted bid
-/// or admin action, so this widget never owns or extends the deadline
-/// itself — it only ever displays time remaining until it.
-class _NextPlayerCountdown extends StatefulWidget {
-  const _NextPlayerCountdown({required this.endsAt});
-
-  final DateTime endsAt;
-
-  @override
-  State<_NextPlayerCountdown> createState() => _NextPlayerCountdownState();
-}
-
-class _NextPlayerCountdownState extends State<_NextPlayerCountdown> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final remaining = widget.endsAt.difference(DateTime.now());
-    final totalSeconds = remaining.isNegative ? 0 : remaining.inSeconds;
-    final minutes = totalSeconds ~/ 60;
-    final seconds = totalSeconds % 60;
-    final label = '$minutes:${seconds.toString().padLeft(2, '0')}';
-    return Text(
-      label,
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: totalSeconds <= 5 ? AppColors.live : AppColors.textPrimary,
-      ),
-    );
-  }
-}
-
 /// Rotating accent palette for team initial-avatars — same set used for
 /// stat-card badges/chart legends elsewhere (AppColors.accents), keyed by a
 /// stable hash of the team name so a given team always gets the same color
-/// across the bid-history feed and the Team Purse section.
+/// across the bid-history feed and the Teams section.
 Color _teamAvatarColor(String teamName) =>
     AppColors.accents[teamName.hashCode.abs() % AppColors.accents.length];
 

@@ -52,6 +52,9 @@ export class AuctionService {
         tournamentId,
         name: dto.name,
         bidIncrementRules: dto.bidIncrementRules ?? null,
+        durationMinutes: dto.durationMinutes ?? null,
+        defaultTeamPoints: dto.defaultTeamPoints != null ? dto.defaultTeamPoints.toFixed(2) : null,
+        maxSquadSize: dto.maxSquadSize ?? null,
       }),
     );
   }

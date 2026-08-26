@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { RoleGate } from '../../../core/router/RoleGate'
 import { useAuthStore } from '../../../core/auth/authStore'
 import { roleAtOrAbove } from '../../../types/organization'
 import { StatusPill } from '../../../shared/components/StatusPill'
@@ -19,11 +20,11 @@ function formatLabel(format: Tournament['format']): string {
   return TOURNAMENT_FORMATS.find((f) => f.value === format)?.label ?? format
 }
 
-/** 6-tab detail shell — Overview/Applications/Points Table are fully wired
- * to real data; Teams/Players/Matches render PlaceholderTab (a separate
- * task plugs into this same shell right after this one — see that
- * component's doc comment). Plain useState tab switching, no nested routes,
- * per the task's "keep it simple" latitude. */
+/** 6-tab detail shell (Overview/Teams/Players/Applications/Matches/Points
+ * Table), all wired to real data. Plain useState tab switching, no nested
+ * routes. Auction isn't one of these tabs (sessions are tournament-scoped
+ * but conceptually a bigger flow than a tab) — it's reached via the header
+ * button instead, shown only when the tournament has auctionEnabled. */
 export function TournamentDetailPage() {
   const { tournamentId } = useParams<{ tournamentId: string }>()
   const { data: tournament, isLoading, isError } = useTournament(tournamentId)
@@ -64,9 +65,21 @@ export function TournamentDetailPage() {
         <Link to="/tournaments" className="text-xs font-medium text-text-secondary hover:text-primary">
           ← Tournaments
         </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-text-primary">{tournament.name}</h1>
-          <StatusPill label={TOURNAMENT_STATUS_LABELS[tournament.status]} tone={tournamentStatusTone(tournament.status)} />
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-text-primary">{tournament.name}</h1>
+            <StatusPill label={TOURNAMENT_STATUS_LABELS[tournament.status]} tone={tournamentStatusTone(tournament.status)} />
+          </div>
+          {tournament.auctionEnabled && (
+            <RoleGate minRole="tournament_admin">
+              <Link
+                to={`/tournaments/${tournament.id}/auction`}
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-dark"
+              >
+                🔨 Auction
+              </Link>
+            </RoleGate>
+          )}
         </div>
         <p className="mt-1 text-sm text-text-secondary">
           {formatLabel(tournament.format)} · {tournament.startDate} to {tournament.endDate}

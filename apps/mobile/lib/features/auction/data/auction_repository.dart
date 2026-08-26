@@ -17,6 +17,65 @@ class AddPoolEntryInput {
   Map<String, dynamic> toJson() => {'playerId': playerId, 'basePrice': basePrice, 'lotOrder': lotOrder};
 }
 
+/// One tier of the tiered bid-increment schedule, matching
+/// `BidIncrementRuleDto` in
+/// apps/backend/src/modules/auction/dto/create-auction-session.dto.ts.
+/// `upTo: null` marks the catch-all top tier (applies above every other
+/// tier's ceiling).
+class BidIncrementRuleInput {
+  const BidIncrementRuleInput({required this.increment, this.upTo});
+
+  final num? upTo;
+  final num increment;
+
+  Map<String, dynamic> toJson() => {'upTo': upTo, 'increment': increment};
+}
+
+/// Settings for [AuctionRepository.createSession], matching
+/// `CreateAuctionSessionDto`. Only `name` is required; the rest are omitted
+/// from the request body entirely when left unset (the backend DTO marks
+/// them `@IsOptional`, so no key is sent rather than sending an explicit
+/// `null` for a numeric field — `bidIncrementRules`' own `upTo` is the one
+/// place an explicit `null` is intentional, see `BidIncrementRuleInput`).
+class CreateAuctionSessionInput {
+  const CreateAuctionSessionInput({
+    required this.name,
+    this.durationMinutes,
+    this.defaultTeamPoints,
+    this.maxSquadSize,
+    this.bidIncrementRules,
+  });
+
+  final String name;
+
+  /// Informational total-time budget for the whole session, in minutes.
+  /// Never enforced server-side.
+  final int? durationMinutes;
+
+  /// Starting purse applied to every registered team when the session
+  /// starts (not at creation time).
+  final num? defaultTeamPoints;
+
+  /// Max roster size per team; a team at this count is rejected from
+  /// bidding ("SQUAD FULL").
+  final int? maxSquadSize;
+
+  /// Optional tiered bid-increment schedule. Omit/empty to use the
+  /// backend's default (5% of current bid, rounded).
+  final List<BidIncrementRuleInput>? bidIncrementRules;
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{'name': name};
+    if (durationMinutes != null) json['durationMinutes'] = durationMinutes;
+    if (defaultTeamPoints != null) json['defaultTeamPoints'] = defaultTeamPoints;
+    if (maxSquadSize != null) json['maxSquadSize'] = maxSquadSize;
+    if (bidIncrementRules != null && bidIncrementRules!.isNotEmpty) {
+      json['bidIncrementRules'] = bidIncrementRules!.map((r) => r.toJson()).toList();
+    }
+    return json;
+  }
+}
+
 /// Talks to `AuctionController` / `PlayerPurchaseHistoryController`
 /// (apps/backend/src/modules/auction/auction.controller.ts). Session-scoped
 /// routes are nested under both organization AND tournament — the
@@ -29,8 +88,8 @@ class AddPoolEntryInput {
 /// those go over the `/auction` Socket.IO namespace, owned by
 /// `AuctionRoomController` (see ../application/auction_room_controller.dart).
 /// Everything else — session CRUD-lite, pool management, the admin
-/// start/pause/resume/next-lot actions, bid history, and reports — is plain
-/// REST and lives here.
+/// start/pause/resume/mark-sold/mark-unsold/next-lot actions, bid history,
+/// and reports — is plain REST and lives here.
 class AuctionRepository {
   AuctionRepository(this._apiClient);
 
@@ -48,12 +107,12 @@ class AuctionRepository {
 
   Future<AuctionSession> createSession(
     String organizationId,
-    String tournamentId, {
-    required String name,
-  }) async {
+    String tournamentId,
+    CreateAuctionSessionInput input,
+  ) async {
     final response = await _apiClient.post(
       _sessionsBase(organizationId, tournamentId),
-      data: {'name': name},
+      data: input.toJson(),
     );
     return AuctionSession.fromJson(response.data as Map<String, dynamic>);
   }
@@ -124,6 +183,40 @@ class AuctionRepository {
     return AuctionSession.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Marks the current lot SOLD to the leading bidder — requires a current
+  /// bid; deducts the winning team's purse and adds the player to their
+  /// roster server-side. Does NOT advance to the next lot; call [nextLot]
+  /// separately once the SOLD confirmation has been shown. The live room's
+  /// state actually updates from the `auction.playerSold` broadcast (see
+  /// AuctionRoomController._onPlayerSold), same division of labor as every
+  /// other admin action here.
+  Future<AuctionSession> markSold(
+    String organizationId,
+    String tournamentId,
+    String sessionId,
+  ) async {
+    final response =
+        await _apiClient.post('${_sessionsBase(organizationId, tournamentId)}/$sessionId/mark-sold');
+    return AuctionSession.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Marks the current lot UNSOLD — allowed with or without a current bid
+  /// (admin override). No purse ever moves. Does not advance; call
+  /// [nextLot] separately.
+  Future<AuctionSession> markUnsold(
+    String organizationId,
+    String tournamentId,
+    String sessionId,
+  ) async {
+    final response =
+        await _apiClient.post('${_sessionsBase(organizationId, tournamentId)}/$sessionId/mark-unsold');
+    return AuctionSession.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Advances to the next pending lot (or completes the session if none
+  /// remain). Requires the current lot to already be marked SOLD/UNSOLD via
+  /// [markSold]/[markUnsold] — the backend rejects this call while a lot is
+  /// still `IN_PROGRESS`.
   Future<AuctionSession> nextLot(
     String organizationId,
     String tournamentId,

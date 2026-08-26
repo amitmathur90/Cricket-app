@@ -18,6 +18,18 @@ class PlayersRepository {
         .toList();
   }
 
+  /// Fetches one player's full org-level profile — `GET
+  /// .../players/:playerId` (`PlayersController.findOne`). Used to enrich
+  /// screens that only receive a trimmed player projection over another
+  /// channel (e.g. the live auction room's WS payloads only carry
+  /// `{id, fullName, role, photoUrl}` — see AuctionLotPlayer's doc comment
+  /// in auction_pool_entry.dart) with fields like `battingStyle`/
+  /// `bowlingStyle` that only this full-record endpoint returns.
+  Future<Player> getOne(String organizationId, String playerId) async {
+    final response = await _apiClient.get('/organizations/$organizationId/players/$playerId');
+    return Player.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Matches `CreatePlayerDto` exactly (apps/backend/src/modules/players/dto/create-player.dto.ts):
   /// [fullName], [role], [photoUrl], [idDocumentUrl], [ageCategory] and
   /// [previousStatsNotes] are required there; everything else is optional.

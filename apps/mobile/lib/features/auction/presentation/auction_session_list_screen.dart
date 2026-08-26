@@ -19,10 +19,10 @@ class AuctionSessionListScreen extends ConsumerWidget {
   final String tournamentId;
 
   Future<void> _createSession(BuildContext context, WidgetRef ref, String organizationId) async {
-    final name = await showCreateAuctionSessionDialog(context);
-    if (name == null) return;
+    final input = await showCreateAuctionSessionDialog(context);
+    if (input == null) return;
     try {
-      await ref.read(auctionRepositoryProvider).createSession(organizationId, tournamentId, name: name);
+      await ref.read(auctionRepositoryProvider).createSession(organizationId, tournamentId, input);
       ref.invalidate(auctionSessionsListProvider(tournamentId));
     } on ApiException catch (e) {
       if (!context.mounted) return;

@@ -29,3 +29,16 @@ final playerStatisticsProvider =
   }
   return ref.watch(playersRepositoryProvider).getStatistics(organizationId, playerId);
 });
+
+/// One player's full org-level profile, keyed by playerId (org resolved from
+/// the active session, same convention as [playerStatisticsProvider]). Used
+/// by the live auction room to enrich the current lot's player display with
+/// `battingStyle`/`bowlingStyle` — fields the WS `auction.playerUp`/
+/// `auction.stateSync` payloads don't carry (see `PlayersRepository.getOne`).
+final playerDetailProvider = FutureProvider.autoDispose.family<Player, String>((ref, playerId) async {
+  final organizationId = ref.watch(sessionControllerProvider.select((s) => s.activeOrgId));
+  if (organizationId == null) {
+    throw StateError('No active organization');
+  }
+  return ref.watch(playersRepositoryProvider).getOne(organizationId, playerId);
+});

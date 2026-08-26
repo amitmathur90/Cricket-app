@@ -101,17 +101,46 @@ export class AuctionController {
     return this.realtimeService.resumeSession(organizationId, sessionId);
   }
 
+  @Post(':sessionId/mark-sold')
+  @Roles(...ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Mark the current lot SOLD to the leading bidder — deducts their purse and adds the player to their ' +
+      'roster. Requires a current bid; does not advance to the next lot (call next-lot separately).',
+  })
+  markSold(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ) {
+    return this.realtimeService.markSold(organizationId, sessionId);
+  }
+
+  @Post(':sessionId/mark-unsold')
+  @Roles(...ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Mark the current lot UNSOLD — allowed with or without a current bid (admin override). No purse moves. ' +
+      'Does not advance to the next lot (call next-lot separately).',
+  })
+  markUnsold(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ) {
+    return this.realtimeService.markUnsold(organizationId, sessionId);
+  }
+
   @Post(':sessionId/next-lot')
   @Roles(...ADMIN_ROLES)
   @ApiOperation({
     summary:
-      'Manual override: force-resolve the current lot right now and advance, instead of waiting for the timer',
+      'Advance to the next pending lot (or complete the session if none remain). Requires the current lot to ' +
+      'already be marked SOLD/UNSOLD.',
   })
   nextLot(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    return this.realtimeService.manualNextLot(organizationId, sessionId);
+    return this.realtimeService.advanceToNextLot(organizationId, sessionId);
   }
 
   @Post(':sessionId/undo-last-bid')
