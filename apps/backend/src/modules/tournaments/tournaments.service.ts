@@ -25,6 +25,14 @@ export type TournamentResponse = Tournament & {
   registrationStatus: RegistrationStatus;
 };
 
+/** One team registered in a tournament — the id here IS the `tournamentTeamId` matches assign home/away to. */
+export interface TournamentTeamSummary {
+  tournamentTeamId: string;
+  teamId: string;
+  teamName: string;
+  status: string;
+}
+
 /** One row of the computed (never persisted) points table — see `getPointsTable`. */
 export interface PointsTableRow {
   tournamentTeamId: string;
@@ -292,6 +300,29 @@ export class TournamentsService {
   async remove(organizationId: string, tournamentId: string): Promise<void> {
     const tournament = await this.findOneEntity(organizationId, tournamentId);
     await this.tournamentRepo.remove(tournament);
+  }
+
+  /**
+   * Lists a tournament's registered teams (`tournament_teams` rows joined to
+   * `Team` for the display name). Exists so clients — the "Add/Edit match"
+   * form in particular — can assign `home`/`awayTournamentTeamId` directly
+   * without needing an auction session to exist first (previously the only
+   * way the mobile app could resolve a tournament's teams was by reading its
+   * most recent auction session's report, which meant a match couldn't be
+   * given real teams until an auction had run).
+   */
+  async getTeams(organizationId: string, tournamentId: string): Promise<TournamentTeamSummary[]> {
+    await this.findOneEntity(organizationId, tournamentId);
+    const tournamentTeams = await this.tournamentTeamRepo.find({
+      where: { tournamentId },
+      relations: ['team'],
+    });
+    return tournamentTeams.map((tt) => ({
+      tournamentTeamId: tt.id,
+      teamId: tt.teamId,
+      teamName: tt.team?.name ?? 'Unknown',
+      status: tt.status,
+    }));
   }
 
   /**

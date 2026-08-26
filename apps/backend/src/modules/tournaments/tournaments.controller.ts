@@ -54,6 +54,19 @@ export class TournamentsController {
     return this.tournamentsService.findOne(organizationId, tournamentId);
   }
 
+  @Get(':tournamentId/teams')
+  @ApiOperation({
+    summary:
+      "List a tournament's registered teams (id = tournamentTeamId, for assigning a match's home/away team) " +
+      "— works whether or not an auction session exists for the tournament.",
+  })
+  getTeams(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
+  ) {
+    return this.tournamentsService.getTeams(organizationId, tournamentId);
+  }
+
   @Get(':tournamentId/points-table')
   @ApiOperation({
     summary:

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/network_providers.dart';
-import '../../auction/application/auction_providers.dart';
 import '../../auth/application/session_controller.dart';
+import '../../tournaments/application/tournaments_providers.dart';
 import '../data/match_lineup_repository.dart';
 import '../data/matches_repository.dart';
 import '../data/models/match.dart';
@@ -70,34 +70,23 @@ final matchLineupProvider =
 typedef TournamentTeamOption = ({String tournamentTeamId, String teamName});
 
 /// Teams registered to a tournament — backs the match form's home/away team
-/// dropdowns.
-///
-/// There is currently **no backend GET endpoint** that lists a tournament's
-/// `tournament_teams` rows directly (see `TeamsController` — only
-/// `POST .../register` and `GET .../roster` exist, neither of which lists
-/// every team registered to a tournament). This is the exact same gap
-/// `TeamAuctionTab` already works around (see its doc comment): the only
-/// place `tournament_teams` ids + display names come back together is
-/// `AuctionService.getReport`, which itself needs an existing auction
-/// session id to call. So this provider reuses that same technique — look
-/// up the tournament's most recent auction session and read its report's
-/// `teams[]` (which the backend populates from every `tournament_teams` row
-/// for the tournament, not just teams added to that session's pool).
-///
-/// If the tournament has no auction session yet, this returns an empty
-/// list and the match form degrades to TBD-vs-TBD-only, which the backend
-/// explicitly documents as a valid match (see CreateMatchDto's doc
-/// comment) — a genuine backend/data gap being surfaced honestly, not a
-/// client shortcut.
+/// dropdowns. Backed by `GET .../tournaments/:tournamentId/teams`
+/// (`TournamentsRepository.getTeams`), which lists every `tournament_teams`
+/// row for the tournament directly — no auction session required. (An
+/// earlier version of this provider derived teams from the tournament's
+/// most recent auction session report, since that was the only endpoint
+/// that returned tournament_teams ids + display names together at the
+/// time; that workaround meant a match couldn't get real teams assigned
+/// until an auction had run. The dedicated endpoint replaces it.)
 final tournamentTeamsProvider =
     FutureProvider.autoDispose.family<List<TournamentTeamOption>, String>((ref, tournamentId) async {
-  final sessions = await ref.watch(auctionSessionsListProvider(tournamentId).future);
-  if (sessions.isEmpty) return const [];
-  final latest = sessions.first;
-  final report = await ref.watch(
-    auctionReportProvider((tournamentId: tournamentId, sessionId: latest.id)).future,
-  );
-  return report.teams
-      .map((t) => (tournamentTeamId: t.tournamentTeamId, teamName: t.teamName))
+  final organizationId = ref.watch(sessionControllerProvider.select((s) => s.activeOrgId));
+  if (organizationId == null) return const [];
+  final rows = await ref.watch(tournamentsRepositoryProvider).getTeams(organizationId, tournamentId);
+  return rows
+      .map((r) => (
+            tournamentTeamId: r['tournamentTeamId'] as String,
+            teamName: r['teamName'] as String,
+          ))
       .toList();
 });

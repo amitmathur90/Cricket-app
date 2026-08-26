@@ -319,11 +319,9 @@ class _TeamFields extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(
-          "No teams are resolvable for this tournament yet (there's no backend endpoint to list "
-          "a tournament's registered teams directly — this app reads them from the tournament's "
-          "most recent auction session report, so at least one auction session needs to exist "
-          'first). This match will be created as TBD vs TBD; venue/umpire/scorer/date can still '
-          'be set below.',
+          'No teams are registered in this tournament yet — register teams first (Tournament → '
+          'Teams → Add team), then come back here to assign them. This match will be created as '
+          'TBD vs TBD in the meantime; venue/umpire/scorer/date can still be set below.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       );

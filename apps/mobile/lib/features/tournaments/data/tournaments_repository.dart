@@ -181,4 +181,14 @@ class TournamentsRepository {
   Future<void> delete(String organizationId, String tournamentId) async {
     await _apiClient.delete('/organizations/$organizationId/tournaments/$tournamentId');
   }
+
+  /// `GET .../tournaments/:tournamentId/teams` — the tournament's registered
+  /// teams (`tournament_teams` rows), id + display name. Lets the match
+  /// form assign home/away teams directly, with no auction session
+  /// required first.
+  Future<List<Map<String, dynamic>>> getTeams(String organizationId, String tournamentId) async {
+    final response =
+        await _apiClient.get('/organizations/$organizationId/tournaments/$tournamentId/teams');
+    return (response.data as List<dynamic>).cast<Map<String, dynamic>>();
+  }
 }
