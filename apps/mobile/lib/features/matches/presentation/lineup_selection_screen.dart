@@ -234,6 +234,22 @@ class _LineupEditorState extends ConsumerState<_LineupEditor> {
 
   int get _playingCount => _selections.values.where((s) => s == _Selection.playing).length;
 
+  /// One-tap shortcut: marks the first 11 roster entries (or all of them, if
+  /// the roster has fewer than 11 players — a common case for a small/new
+  /// squad that hasn't finished registering a full XI yet) as Playing,
+  /// leaving the rest unselected. Replaces having to tap each of up to 11
+  /// rows individually. Doesn't touch substitutes.
+  void _selectFirstEleven() {
+    setState(() {
+      var remaining = 11;
+      for (final entry in widget.roster) {
+        if (_selections[entry.id] == _Selection.substitute) continue;
+        _selections[entry.id] = remaining > 0 ? _Selection.playing : _Selection.none;
+        if (remaining > 0) remaining--;
+      }
+    });
+  }
+
   Future<void> _save() async {
     final playing = <String>[];
     final subs = <String>[];
@@ -277,7 +293,13 @@ class _LineupEditorState extends ConsumerState<_LineupEditor> {
   @override
   Widget build(BuildContext context) {
     final playingCount = _playingCount;
-    final canSave = playingCount == 11 && !_saving;
+    // Backend doesn't enforce "exactly 11" (see MatchLineupService.setLineup's
+    // doc comment — any valid subset of the roster is accepted), so this
+    // client-side rule only requires enough to open an innings: 2 batters
+    // (striker + non-striker) covers both the batting- and bowling-first
+    // case, since a bowling team only needs 1. A small/new squad that hasn't
+    // registered a full 11 yet is no longer stuck unable to save anything.
+    final canSave = playingCount >= 2 && !_saving;
 
     final playingEntries =
         widget.roster.where((e) => _selections[e.id] == _Selection.playing).toList();
@@ -289,6 +311,19 @@ class _LineupEditorState extends ConsumerState<_LineupEditor> {
     return Column(
       children: [
         _CountHeader(teamName: widget.teamName, playingCount: playingCount),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _selectFirstEleven,
+              icon: const Icon(Icons.flash_on, size: 18),
+              label: Text(
+                widget.roster.length <= 11 ? 'Select all as Playing XI' : 'Select first 11 as Playing XI',
+              ),
+            ),
+          ),
+        ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -335,9 +370,9 @@ class _LineupEditorState extends ConsumerState<_LineupEditor> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Text(
-                        playingCount == 11
-                            ? 'Save lineup'
-                            : 'Select exactly 11 to save ($playingCount/11)',
+                        canSave
+                            ? 'Save lineup ($playingCount/11)'
+                            : 'Select at least 2 players to save ($playingCount/11)',
                       ),
               ),
             ),
@@ -356,15 +391,24 @@ class _CountHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final complete = playingCount == 11;
-    final over = playingCount > 11;
-    final color = complete ? Colors.green : Theme.of(context).colorScheme.error;
-    final remaining = (playingCount - 11).abs();
+    // 11 is the traditional full XI, but saving only actually requires 2+
+    // (see _LineupEditorState.canSave's doc comment) — so "complete" here
+    // just means "at the traditional full size", not a hard gate. Only
+    // fewer than 2 is flagged as blocking (can't save yet), everything else
+    // in between is a normal in-progress state, not an error.
+    final complete = playingCount >= 11;
+    final blocking = playingCount < 2;
+    final color = complete
+        ? Colors.green
+        : blocking
+            ? Theme.of(context).colorScheme.error
+            : Colors.orange;
+    final remaining = complete ? 0 : 11 - playingCount;
     final message = complete
         ? 'Playing XI complete.'
-        : over
-            ? 'Remove $remaining player${remaining == 1 ? '' : 's'} from the Playing XI.'
-            : 'Select $remaining more player${remaining == 1 ? '' : 's'} for the Playing XI.';
+        : blocking
+            ? 'Select at least 2 players to start scoring.'
+            : '$playingCount selected — $remaining more for a traditional full XI (optional).';
 
     return Container(
       width: double.infinity,
