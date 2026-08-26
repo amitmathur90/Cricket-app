@@ -10,18 +10,33 @@ enum AuctionConnectionStatus { connecting, connected, disconnected }
 /// The outcome banner shown after a lot resolves (`auction.playerSold` /
 /// `auction.playerUnsold`) until the next `auction.playerUp` replaces it.
 class AuctionLotResult {
-  const AuctionLotResult.sold({required this.playerId, required this.finalPrice, this.soldToTeamName})
-      : isSold = true;
+  const AuctionLotResult.sold({
+    required this.playerId,
+    required this.finalPrice,
+    this.soldToTeamName,
+    this.soldToTeamId,
+    this.purseRemaining,
+  }) : isSold = true;
 
   const AuctionLotResult.unsold({required this.playerId})
       : isSold = false,
         finalPrice = null,
-        soldToTeamName = null;
+        soldToTeamName = null,
+        soldToTeamId = null,
+        purseRemaining = null;
 
   final bool isSold;
   final String playerId;
   final String? finalPrice;
   final String? soldToTeamName;
+  final String? soldToTeamId;
+
+  /// The server-confirmed purse remaining for the buying team AFTER this
+  /// sale's deduction (`AuctionPlayerSoldEvent.purseRemaining`) — the real
+  /// value, distinct from any pre-computed "before minus final bid" estimate
+  /// shown client-side in the SOLD confirmation dialog before this event
+  /// arrives.
+  final String? purseRemaining;
 }
 
 /// One row in the live bid history feed, built from `auction.bidPlaced`
@@ -291,6 +306,8 @@ class AuctionRoomController extends StateNotifier<AuctionRoomState> {
         playerId: evt.playerId,
         finalPrice: evt.finalPrice,
         soldToTeamName: evt.soldToTeamName,
+        soldToTeamId: evt.soldToTeamId,
+        purseRemaining: evt.purseRemaining,
       ),
     );
   }

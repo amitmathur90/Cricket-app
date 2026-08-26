@@ -112,6 +112,86 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
     }
   }
 
+  /// Shows the "Confirm Player Sale?" dialog before actually calling
+  /// `markSold` — SOLD must never execute on a single tap (see this file's
+  /// task spec). `leadingTeamPurseRemaining` is the leading team's CURRENT
+  /// (pre-deduction) purse from live state; "Remaining" here is a
+  /// display-only `before - currentBidAmount` estimate — the real
+  /// post-deduction value arrives moments later via `auction.playerSold` and
+  /// is what the "Player Sold" summary banner shows, not this estimate.
+  Future<void> _confirmMarkSold({
+    required String playerName,
+    required String? leadingTeamName,
+    required num currentBidAmount,
+    required num? leadingTeamPurseRemaining,
+  }) async {
+    final before = leadingTeamPurseRemaining;
+    final remaining = before != null ? before - currentBidAmount : null;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm Player Sale?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Player: $playerName'),
+            const SizedBox(height: 4),
+            Text('Team: ${leadingTeamName ?? 'Unknown team'}'),
+            const SizedBox(height: 4),
+            Text('Final Bid: ₹${_money(currentBidAmount)}'),
+            const SizedBox(height: 16),
+            const Text('Team Points:', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Before: ${before != null ? '₹${_money(before)}' : '—'}'),
+            Text('Spent: ₹${_money(currentBidAmount)}'),
+            Text('Remaining: ${remaining != null ? '₹${_money(remaining)}' : '—'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm SOLD'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _runAdminAction(() =>
+        ref.read(auctionRepositoryProvider).markSold(widget.organizationId, widget.tournamentId, widget.sessionId));
+  }
+
+  /// Shows the "Mark Player as Unsold?" dialog before calling `markUnsold` —
+  /// same never-execute-on-a-single-tap requirement as SOLD, but with no
+  /// team/points fields since UNSOLD never touches any team's purse.
+  Future<void> _confirmMarkUnsold({required String playerName}) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Mark Player as Unsold?'),
+        content: Text(playerName),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm UNSOLD'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _runAdminAction(() => ref
+        .read(auctionRepositoryProvider)
+        .markUnsold(widget.organizationId, widget.tournamentId, widget.sessionId));
+  }
+
   AuctionPlayerPoolEntry? _poolEntryFor(List<AuctionPlayerPoolEntry> pool, String poolEntryId) {
     for (final entry in pool) {
       if (entry.id == poolEntryId) return entry;
@@ -157,11 +237,17 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
     final hasActiveBid = roomState.bidHistory.any((b) => !b.voided);
     final isResolved = lot?.resolved ?? false;
 
-    String? leadingTeamName;
+    AuctionLiveTeam? leadingTeam;
     if (lot != null && lot.currentBidTeamId != null) {
       final matches = roomState.teams.where((t) => t.tournamentTeamId == lot.currentBidTeamId);
-      leadingTeamName = matches.isEmpty ? null : matches.first.teamName;
+      leadingTeam = matches.isEmpty ? null : matches.first;
     }
+    final leadingTeamName = leadingTeam?.teamName;
+    // The leading team's CURRENT (pre-deduction) purse — used as the "Before"
+    // figure in the SOLD confirmation dialog. Null only if the leading team
+    // somehow isn't in the live team list or hasn't reported a purse yet.
+    final leadingTeamPurseRemaining =
+        leadingTeam != null ? num.tryParse(leadingTeam.purseRemaining ?? '') : null;
 
     final soldCount = pool.where((e) => e.status == AuctionPoolStatus.sold).length;
     final unsoldCount = pool.where((e) => e.status == AuctionPoolStatus.unsold).length;
@@ -172,6 +258,19 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
 
     final currentBidAmount = num.tryParse(lot?.currentBidAmount ?? lot?.basePrice ?? '') ?? 0;
     final nextBidAmount = computeNextBid(currentBidAmount, sessionDetail?.bidIncrementRules);
+
+    // Squad count for the just-resolved SOLD lot's summary banner — derived
+    // from the pool listing the same way _TeamsSection derives each team's
+    // live "players purchased" count. `pool` is invalidated right after a
+    // lot resolves (see the ref.listen block above), so this picks up the
+    // just-sold player once that refetch lands.
+    final lastResult = roomState.lastResult;
+    int? soldSquadCount;
+    if (lastResult != null && lastResult.isSold && lastResult.soldToTeamId != null) {
+      soldSquadCount = pool
+          .where((e) => e.status == AuctionPoolStatus.sold && e.soldToTeamId == lastResult.soldToTeamId)
+          .length;
+    }
 
     return Column(
       children: [
@@ -185,7 +284,8 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
           connectionStatus: roomState.connectionStatus,
           isPaused: isPaused,
         ),
-        if (roomState.lastResult != null) _ResultBanner(result: roomState.lastResult!),
+        if (lastResult != null)
+          _ResultBanner(result: lastResult, squadCount: soldSquadCount, maxSquadSize: roomState.maxSquadSize),
         Expanded(
           child: lot == null
               ? const Center(child: Text('Waiting for the next lot...'))
@@ -206,6 +306,7 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
                       maxSquadSize: roomState.maxSquadSize,
                       canBid: !isResolved && !isPaused && !_adminBusy,
                       nextBidAmount: nextBidAmount,
+                      currentBidTeamId: lot.currentBidTeamId,
                       onPlaceBid: (teamId) => controller.placeBid(teamId: teamId, amount: nextBidAmount),
                     ),
                     _AdminControlsCard(
@@ -219,12 +320,13 @@ class _LiveAuctionRoomViewState extends ConsumerState<LiveAuctionRoomView> {
                       onResume: () => _runAdminAction(() => ref
                           .read(auctionRepositoryProvider)
                           .resumeSession(widget.organizationId, widget.tournamentId, widget.sessionId)),
-                      onMarkSold: () => _runAdminAction(() => ref
-                          .read(auctionRepositoryProvider)
-                          .markSold(widget.organizationId, widget.tournamentId, widget.sessionId)),
-                      onMarkUnsold: () => _runAdminAction(() => ref
-                          .read(auctionRepositoryProvider)
-                          .markUnsold(widget.organizationId, widget.tournamentId, widget.sessionId)),
+                      onMarkSold: () => _confirmMarkSold(
+                        playerName: lot.player.fullName,
+                        leadingTeamName: leadingTeamName,
+                        currentBidAmount: currentBidAmount,
+                        leadingTeamPurseRemaining: leadingTeamPurseRemaining,
+                      ),
+                      onMarkUnsold: () => _confirmMarkUnsold(playerName: lot.player.fullName),
                       onNextLot: () => _runAdminAction(() => ref
                           .read(auctionRepositoryProvider)
                           .nextLot(widget.organizationId, widget.tournamentId, widget.sessionId)),
@@ -467,17 +569,30 @@ class _StatusIndicator extends StatelessWidget {
   }
 }
 
+/// The "Player Sold"/"Player Unsold" summary panel, shown once
+/// [AuctionRoomController] surfaces a [AuctionLotResult] (from
+/// `auction.playerSold`/`auction.playerUnsold`) until the next
+/// `auction.playerUp` clears it. For a SOLD outcome this shows every field
+/// the spec calls for — Player Status, Team, Final Bid, Remaining Points
+/// (the server-confirmed `purseRemaining` off the broadcast itself, NOT the
+/// pre-computed estimate shown in the confirm dialog before the sale), and
+/// Squad count ([squadCount], derived by the caller from the pool listing).
+/// A confirmed UNSOLD lot never touches any team's purse, so its summary is
+/// deliberately just the status line — no team/points/squad fields apply.
 class _ResultBanner extends StatelessWidget {
-  const _ResultBanner({required this.result});
+  const _ResultBanner({required this.result, this.squadCount, this.maxSquadSize});
 
   final AuctionLotResult result;
+
+  /// This lot's buying team's players-purchased count, including this sale —
+  /// null while unsold, or while the pool refetch triggered by this result
+  /// hasn't landed yet.
+  final int? squadCount;
+  final int? maxSquadSize;
 
   @override
   Widget build(BuildContext context) {
     final color = result.isSold ? AppColors.primary : AppColors.textSecondary;
-    final text = result.isSold
-        ? 'SOLD for ₹${result.finalPrice} to ${result.soldToTeamName ?? 'unknown team'}'
-        : 'UNSOLD';
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -486,18 +601,48 @@ class _ResultBanner extends StatelessWidget {
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(result.isSold ? Icons.check_circle : Icons.block, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(
+                'Player Status: ${result.isSold ? 'SOLD' : 'UNSOLD'}',
+                style: TextStyle(fontWeight: FontWeight.bold, color: color),
+              ),
+            ],
+          ),
+          if (result.isSold) ...[
+            const SizedBox(height: 8),
+            _ResultRow('Team', result.soldToTeamName ?? 'Unknown team'),
+            _ResultRow('Final Bid', '₹${result.finalPrice}'),
+            if (result.purseRemaining != null) _ResultRow('Remaining Points', '₹${result.purseRemaining}'),
+            if (squadCount != null)
+              _ResultRow('Squad', maxSquadSize != null ? '$squadCount/$maxSquadSize' : '$squadCount'),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultRow extends StatelessWidget {
+  const _ResultRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(result.isSold ? Icons.check_circle : Icons.block, size: 18, color: color),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.bold, color: color),
-            ),
-          ),
+          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
+          Flexible(child: Text(value, overflow: TextOverflow.ellipsis)),
         ],
       ),
     );
@@ -1144,6 +1289,7 @@ class _TeamsSection extends StatelessWidget {
     required this.maxSquadSize,
     required this.canBid,
     required this.nextBidAmount,
+    required this.currentBidTeamId,
     required this.onPlaceBid,
   });
 
@@ -1153,9 +1299,16 @@ class _TeamsSection extends StatelessWidget {
 
   /// True while the current lot is open to bids (unresolved), the session
   /// isn't paused, and no admin action is already in flight — team-specific
-  /// squad-fullness is layered on top of this per card, not baked in here.
+  /// squad-fullness/insufficient-points/leading-bidder checks are layered on
+  /// top of this per card, not baked in here.
   final bool canBid;
   final num nextBidAmount;
+
+  /// The current lot's leading bidder, if any (`AuctionCurrentLot.
+  /// currentBidTeamId`) — passed down so each card can disable its own
+  /// PLACE BID button when IT is already the leading bidder (a team can't
+  /// out-bid its own standing bid).
+  final String? currentBidTeamId;
   final void Function(String teamId) onPlaceBid;
 
   int _playersPurchased(AuctionLiveTeam team) => pool
@@ -1179,6 +1332,7 @@ class _TeamsSection extends StatelessWidget {
               maxSquadSize: maxSquadSize,
               canBid: canBid,
               nextBidAmount: nextBidAmount,
+              isLeadingBidder: currentBidTeamId != null && currentBidTeamId == team.tournamentTeamId,
               onPlaceBid: () => onPlaceBid(team.tournamentTeamId),
             ),
         ],
@@ -1194,6 +1348,7 @@ class _TeamActionCard extends StatelessWidget {
     required this.maxSquadSize,
     required this.canBid,
     required this.nextBidAmount,
+    required this.isLeadingBidder,
     required this.onPlaceBid,
   });
 
@@ -1202,11 +1357,28 @@ class _TeamActionCard extends StatelessWidget {
   final int? maxSquadSize;
   final bool canBid;
   final num nextBidAmount;
+
+  /// True when this team is already the current lot's leading bidder
+  /// (`AuctionCurrentLot.currentBidTeamId == team.tournamentTeamId`) — a
+  /// team can't out-bid its own standing bid, so PLACE BID is disabled with
+  /// a "Leading Bidder" label in that case. Client-side UX guard only; the
+  /// backend doesn't reject same-team re-bids today, but this task's scope
+  /// is client-only (see live_auction_room_view.dart's task spec).
+  final bool isLeadingBidder;
   final VoidCallback onPlaceBid;
 
   @override
   Widget build(BuildContext context) {
-    final canActuallyBid = canBid && !team.squadFull;
+    // Proactive client-side disables — all purely UX; the server remains the
+    // authoritative check regardless (a rejected bid still surfaces via
+    // auction.error). Checked in this order because each corresponds to a
+    // dedicated button label, and only one can show at a time:
+    //   1. squadFull — server-computed, already existed before this pass.
+    //   2. isLeadingBidder — this team already holds the standing bid.
+    //   3. insufficientPoints — this team's purse can't cover the next bid.
+    final purseRemaining = num.tryParse(team.purseRemaining ?? '');
+    final insufficientPoints = purseRemaining != null && purseRemaining < nextBidAmount;
+    final canActuallyBid = canBid && !team.squadFull && !isLeadingBidder && !insufficientPoints;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -1259,26 +1431,45 @@ class _TeamActionCard extends StatelessWidget {
               width: double.infinity,
               height: 46,
               child: team.squadFull
-                  ? OutlinedButton(
-                      onPressed: null,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.negative,
-                        disabledForegroundColor: AppColors.negative,
-                        side: const BorderSide(color: AppColors.negative),
-                      ),
-                      child: const Text('SQUAD FULL', style: TextStyle(fontWeight: FontWeight.bold)),
-                    )
-                  : FilledButton(
-                      onPressed: canActuallyBid ? onPlaceBid : null,
-                      child: Text(
-                        'PLACE BID  ₹${_money(nextBidAmount)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                    ),
+                  ? _DisabledTeamButton(label: 'SQUAD FULL')
+                  : isLeadingBidder
+                      ? _DisabledTeamButton(label: 'Leading Bidder')
+                      : insufficientPoints
+                          ? _DisabledTeamButton(label: 'Insufficient Points')
+                          : FilledButton(
+                              onPressed: canActuallyBid ? onPlaceBid : null,
+                              child: Text(
+                                'PLACE BID  ₹${_money(nextBidAmount)}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                            ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Shared visual for every proactive-disable state on a team's PLACE BID
+/// button (SQUAD FULL / Leading Bidder / Insufficient Points) — same
+/// negative-toned outlined look the SQUAD FULL case already used before this
+/// pass, just factored out so all three disable reasons render identically.
+class _DisabledTeamButton extends StatelessWidget {
+  const _DisabledTeamButton({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: null,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.negative,
+        disabledForegroundColor: AppColors.negative,
+        side: const BorderSide(color: AppColors.negative),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 }

@@ -63,7 +63,12 @@ export function LiveAuctionRoomPage() {
   const { data: session } = useAuctionSession(tournamentId, sessionId)
   const { connected, lastError, placeBid } = useAuctionSocket(sessionId)
   const { data: liveState } = useAuctionLiveState(sessionId)
-  const { data: bids } = useAuctionBids(tournamentId, sessionId)
+  // Scoped to the current lot's player so the panel resets cleanly on every
+  // Next Player advance instead of accumulating every bid placed all
+  // session long — useAuctionBids's query key includes this playerId, so a
+  // new lot (new player id) naturally triggers a fresh, narrowly-scoped
+  // fetch rather than carrying the previous lot's bids forward.
+  const { data: bids } = useAuctionBids(tournamentId, sessionId, liveState?.currentLot?.player.id)
   const { data: pool } = useAuctionPool(tournamentId, sessionId)
   const isCompleted = session?.status === 'completed'
   const { data: report } = useAuctionReport(tournamentId, isCompleted ? sessionId : undefined)
@@ -76,10 +81,33 @@ export function LiveAuctionRoomPage() {
   const resumeMutation = useResumeAuction(tournamentId, sessionId)
 
   const [actionError, setActionError] = useState<string | null>(null)
+  // Which resolution confirm dialog (if any) is currently open — SOLD and
+  // UNSOLD both stage their mutation behind a confirm step instead of firing
+  // immediately on click.
+  const [confirmAction, setConfirmAction] = useState<'sold' | 'unsold' | null>(null)
+  // Which outcome the admin actually confirmed for the CURRENT lot, so the
+  // resolved-state banner can say "Player Status: SOLD" vs "...UNSOLD"
+  // precisely rather than guessing from currentBidTeamId (marking a lot
+  // UNSOLD is allowed even when it already has a leading bid, so bid
+  // presence alone can't reliably distinguish the two outcomes). Reset
+  // below whenever a new lot comes up so it never carries over stale from
+  // the previous lot.
+  const [resolvedOutcome, setResolvedOutcome] = useState<'sold' | 'unsold' | null>(null)
+  // Tracks the last lot resolvedOutcome was set for, so it can be reset the
+  // moment a new lot comes in. Adjusted directly during render (React's
+  // recommended "adjusting state when a prop changes" pattern) rather than
+  // via a useEffect, so the reset is visible in the very same render instead
+  // of trailing one render behind.
+  const [resolvedOutcomeLotId, setResolvedOutcomeLotId] = useState<string | null>(null)
 
   const status = liveState?.session.status ?? session?.status
   const currentLot = liveState?.currentLot ?? null
   const teams = liveState?.teams ?? []
+
+  if (currentLot?.poolEntryId !== resolvedOutcomeLotId) {
+    setResolvedOutcomeLotId(currentLot?.poolEntryId ?? null)
+    setResolvedOutcome(null)
+  }
 
   const timeRemaining = useAuctionTimeRemaining(liveState?.session.startedAt, liveState?.session.durationMinutes)
 
@@ -259,18 +287,44 @@ export function LiveAuctionRoomPage() {
                     {canBidNow && <p className="text-xs font-semibold text-primary">Next Bid ₹{minNextBid}</p>}
                   </div>
 
-                  {currentLot.resolved && (
-                    <div className="rounded-xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary">
-                      {leadingTeamName ? `Sold to ${leadingTeamName} for ${currentLot.currentBidAmount}` : 'Marked unsold'}
-                    </div>
-                  )}
+                  {currentLot.resolved &&
+                    (() => {
+                      // resolvedOutcome (set by the confirm dialogs below) is
+                      // the precise signal for which action the admin took
+                      // this session; currentBidTeamId is only a fallback for
+                      // a resolved lot inherited from a stateSync (e.g. a
+                      // fresh page load / reconnect after the fact), where we
+                      // have no record of which button was clicked.
+                      const wasSold = resolvedOutcome ? resolvedOutcome === 'sold' : !!currentLot.currentBidTeamId
+                      const soldTeam = wasSold
+                        ? teams.find((t) => t.tournamentTeamId === currentLot.currentBidTeamId)
+                        : null
+                      const squadWon = soldTeam ? (squadWonByTeam.get(soldTeam.tournamentTeamId) ?? 0) : 0
+                      return (
+                        <div className="rounded-xl bg-primary/10 px-4 py-3 text-primary">
+                          <p className="text-sm font-semibold">Player Status: {wasSold ? 'SOLD' : 'UNSOLD'}</p>
+                          {wasSold && soldTeam && (
+                            <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium">
+                              <span>Team: {soldTeam.teamName}</span>
+                              <span>Final Bid: ₹{currentLot.currentBidAmount}</span>
+                              <span>Remaining Points: ₹{soldTeam.purseRemaining ?? '—'}</span>
+                              {liveState?.session.maxSquadSize != null && (
+                                <span>
+                                  Squad: {squadWon}/{liveState.session.maxSquadSize}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                   <RoleGate minRole="tournament_admin">
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         disabled={currentLot.resolved || status !== 'live' || !currentLot.currentBidTeamId || markSoldMutation.isPending}
-                        onClick={() => runAction(() => markSoldMutation.mutateAsync())}
+                        onClick={() => setConfirmAction('sold')}
                         className="rounded-xl bg-positive px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         SOLD
@@ -278,7 +332,7 @@ export function LiveAuctionRoomPage() {
                       <button
                         type="button"
                         disabled={currentLot.resolved || status !== 'live' || markUnsoldMutation.isPending}
-                        onClick={() => runAction(() => markUnsoldMutation.mutateAsync())}
+                        onClick={() => setConfirmAction('unsold')}
                         className="rounded-xl bg-negative px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         UNSOLD
@@ -336,9 +390,35 @@ export function LiveAuctionRoomPage() {
             {teams.length === 0 && <div className="p-6 text-center text-sm text-text-muted">Waiting for live state…</div>}
             {teams.map((t) => {
               const remaining = t.purseRemaining != null ? parseFloat(t.purseRemaining) : null
+              // Proactive client-side check, same spirit as squadFull below —
+              // greys the button out before the admin ever clicks it, rather
+              // than relying solely on the server's after-the-fact rejection
+              // (which remains the authoritative check regardless).
               const cannotAfford = remaining != null && remaining < minNextBid
-              const disableBid = !canBidNow || t.squadFull || cannotAfford
+              // A team can't out-bid its own standing bid — this is a
+              // client-side UX guard only; nothing server-side currently
+              // rejects a same-team re-bid (see placeBid in
+              // auction-realtime.service.ts), so this button-disable is the
+              // only thing preventing it today.
+              const isLeadingBidder = !!currentLot?.currentBidTeamId && currentLot.currentBidTeamId === t.tournamentTeamId
+              const disableBid = !canBidNow || t.squadFull || cannotAfford || isLeadingBidder
               const squadWon = squadWonByTeam.get(t.tournamentTeamId) ?? 0
+              const bidLabel = !canBidNow
+                ? 'PLACE BID'
+                : t.squadFull
+                  ? 'SQUAD FULL'
+                  : cannotAfford
+                    ? 'Insufficient Points'
+                    : isLeadingBidder
+                      ? 'Leading Bidder'
+                      : `PLACE BID ₹${minNextBid}`
+              const bidTitle = t.squadFull
+                ? 'Squad full'
+                : cannotAfford
+                  ? 'Purse too low for the next bid'
+                  : isLeadingBidder
+                    ? 'This team is already the leading bidder for this lot'
+                    : undefined
               return (
                 <div
                   key={t.tournamentTeamId}
@@ -359,11 +439,11 @@ export function LiveAuctionRoomPage() {
                   <button
                     type="button"
                     disabled={disableBid}
-                    title={t.squadFull ? 'Squad full' : cannotAfford ? 'Purse too low for the next bid' : undefined}
+                    title={bidTitle}
                     onClick={() => handlePlaceBid(t.tournamentTeamId)}
                     className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {t.squadFull ? 'SQUAD FULL' : canBidNow ? `PLACE BID ₹${minNextBid}` : 'PLACE BID'}
+                    {bidLabel}
                   </button>
                 </div>
               )
@@ -387,6 +467,121 @@ export function LiveAuctionRoomPage() {
           </div>
         </div>
       )}
+
+      {confirmAction === 'sold' &&
+        currentLot &&
+        (() => {
+          const leadingTeam = teams.find((t) => t.tournamentTeamId === currentLot.currentBidTeamId)
+          const finalBid = currentLot.currentBidAmount ?? currentLot.basePrice
+          const finalBidValue = parseFloat(finalBid)
+          // "Before" is the leading team's CURRENT purseRemaining from live
+          // state — pre-deduction, since the mutation hasn't run yet.
+          // "Remaining" is computed client-side for display only; the
+          // server computes and broadcasts the authoritative value via
+          // auction.playerSold, which the live state picks up immediately
+          // after confirm.
+          const before = leadingTeam?.purseRemaining != null ? parseFloat(leadingTeam.purseRemaining) : null
+          const remainingAfter = before != null ? before - finalBidValue : null
+          return (
+            <ConfirmDialog
+              title="Confirm Player Sale?"
+              confirmLabel="Confirm SOLD"
+              confirmTone="positive"
+              confirming={markSoldMutation.isPending}
+              onCancel={() => setConfirmAction(null)}
+              onConfirm={() => {
+                setConfirmAction(null)
+                setResolvedOutcome('sold')
+                runAction(() => markSoldMutation.mutateAsync())
+              }}
+            >
+              <div className="flex flex-col gap-1 text-sm text-text-primary">
+                <p>
+                  Player: <span className="font-semibold">{currentLot.player.fullName}</span>
+                </p>
+                <p>
+                  Team: <span className="font-semibold">{leadingTeam?.teamName ?? '—'}</span>
+                </p>
+                <p>
+                  Final Bid: <span className="font-semibold">₹{finalBid}</span>
+                </p>
+                <div className="mt-2 flex flex-col gap-0.5 rounded-lg bg-page px-3 py-2 text-xs">
+                  <p className="mb-1 font-semibold text-text-secondary">Team Points</p>
+                  <p>Before: ₹{before ?? '—'}</p>
+                  <p>Spent: ₹{finalBid}</p>
+                  <p>Remaining: ₹{remainingAfter ?? '—'}</p>
+                </div>
+              </div>
+            </ConfirmDialog>
+          )
+        })()}
+
+      {confirmAction === 'unsold' && currentLot && (
+        <ConfirmDialog
+          title="Mark Player as Unsold?"
+          confirmLabel="Confirm UNSOLD"
+          confirmTone="negative"
+          confirming={markUnsoldMutation.isPending}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            setConfirmAction(null)
+            setResolvedOutcome('unsold')
+            runAction(() => markUnsoldMutation.mutateAsync())
+          }}
+        >
+          <p className="text-sm font-semibold text-text-primary">{currentLot.player.fullName}</p>
+        </ConfirmDialog>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Minimal fixed-overlay confirm modal — there's no existing modal/dialog
+ * primitive in shared/components to reuse (checked: StatusPill,
+ * FormPrimitives, TopBar, PageShell, Sidebar are the only exports there),
+ * so this is a small local one rather than a new dependency. Used for both
+ * the SOLD and UNSOLD confirm steps above; only the "confirm" action ever
+ * calls into a mutation — Cancel (and the component unmounting via
+ * `confirmAction` flipping back to null) never does.
+ */
+function ConfirmDialog({
+  title,
+  children,
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmTone,
+  confirming,
+}: {
+  title: string
+  children: React.ReactNode
+  onCancel: () => void
+  onConfirm: () => void
+  confirmLabel: string
+  confirmTone: 'positive' | 'negative'
+  confirming?: boolean
+}) {
+  const confirmClass = confirmTone === 'positive' ? 'bg-positive hover:opacity-90' : 'bg-negative hover:opacity-90'
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-lg">
+        <h2 className="text-base font-bold text-text-primary">{title}</h2>
+        <div className="mt-3">{children}</div>
+        <div className="mt-5 flex justify-end gap-2">
+          <SecondaryButton type="button" onClick={onCancel} disabled={confirming}>
+            Cancel
+          </SecondaryButton>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirming}
+            className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${confirmClass}`}
+          >
+            {confirming ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
