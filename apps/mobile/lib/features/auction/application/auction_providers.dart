@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/network_providers.dart';
 import '../../auth/application/session_controller.dart';
 import '../data/auction_repository.dart';
+import '../data/models/auction_bid.dart';
 import '../data/models/auction_pool_entry.dart';
 import '../data/models/auction_report.dart';
 import '../data/models/auction_session.dart';
@@ -57,4 +58,26 @@ final playerPurchaseHistoryProvider =
     throw StateError('No active organization');
   }
   return ref.watch(auctionRepositoryProvider).getPlayerPurchaseHistory(organizationId, playerId);
+});
+
+typedef AuctionPlayerBidsKey = ({String tournamentId, String sessionId, String playerId});
+
+/// One player's full bid history within a single session — the "complete
+/// bid history" drill-down opened from AuctionHistoryScreen. Backed by
+/// `GET .../bids?playerId=` (`AuctionRepository.listBids`), which is
+/// admin-only (`@Roles(ORG_ADMIN, TOURNAMENT_ADMIN)` on
+/// `AuctionController.listBids`) — a non-admin caller's 403 surfaces as the
+/// same `ApiException.message` error state every other fetch failure in
+/// this app renders (see AuctionPlayerBidHistoryScreen's doc comment),
+/// rather than being hidden client-side, matching this app's established
+/// RBAC-via-backend-rejection convention.
+final auctionPlayerBidsProvider =
+    FutureProvider.autoDispose.family<List<AuctionBidRecord>, AuctionPlayerBidsKey>((ref, key) async {
+  final organizationId = ref.watch(sessionControllerProvider.select((s) => s.activeOrgId));
+  if (organizationId == null) {
+    throw StateError('No active organization');
+  }
+  return ref
+      .watch(auctionRepositoryProvider)
+      .listBids(organizationId, key.tournamentId, key.sessionId, playerId: key.playerId);
 });

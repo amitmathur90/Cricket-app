@@ -158,6 +158,7 @@ export class AuctionController {
   }
 
   @Get(':sessionId/bids')
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Full bid history for the session, optionally filtered by playerId' })
   listBids(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

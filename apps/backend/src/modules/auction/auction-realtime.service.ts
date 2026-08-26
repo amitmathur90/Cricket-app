@@ -91,11 +91,18 @@ export class AuctionRealtimeService {
     }
   }
 
+  /** Bidding is admin-operator-only: a single auction administrator places
+   * bids on behalf of physical teams in the room, per the spec's "Admin
+   * Controls" list. team_owner was previously allowed too (for a
+   * remote-self-service bidding model that was never actually built in the
+   * UI — every client screen is a single-operator control panel with one
+   * PLACE BID button per team), so it's removed here rather than left as
+   * unused-but-harmless. */
   private assertBidderRole(user: AuthenticatedUser): void {
     if (user.isSuperAdmin) return;
-    const allowed: OrgRole[] = [OrgRole.ORG_ADMIN, OrgRole.TOURNAMENT_ADMIN, OrgRole.TEAM_OWNER];
+    const allowed: OrgRole[] = [OrgRole.ORG_ADMIN, OrgRole.TOURNAMENT_ADMIN];
     if (!user.role || !allowed.includes(user.role)) {
-      throw new ForbiddenException('Only team owners or org/tournament admins may bid');
+      throw new ForbiddenException('Only auction administrators may place bids');
     }
   }
 
@@ -599,9 +606,6 @@ export class AuctionRealtimeService {
       if (!team) throw new NotFoundException('Team not found');
       if (team.tournamentId !== session.tournamentId) {
         throw new BadRequestException('Team is not registered in this tournament');
-      }
-      if (user.role === OrgRole.TEAM_OWNER && !user.isSuperAdmin && team.team.ownerUserId !== user.userId) {
-        throw new ForbiddenException('You may only bid on behalf of your own team');
       }
       if (team.purseRemaining === null) {
         throw new BadRequestException('Team has no purse configured for this tournament and is not eligible to bid');

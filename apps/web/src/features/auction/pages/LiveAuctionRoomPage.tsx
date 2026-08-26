@@ -11,6 +11,7 @@ import { useAuctionSocket, useAuctionLiveState } from '../hooks/useAuctionSocket
 import { useAuctionBids } from '../hooks/useAuctionBids'
 import { useAuctionPool } from '../hooks/useAuctionPool'
 import { useAuctionReport } from '../hooks/useAuctionReport'
+import { AuctionCompletionSummary } from '../components/AuctionCompletionSummary'
 import { useAuctionTimeRemaining } from '../hooks/useAuctionTimeRemaining'
 import {
   useMarkSold,
@@ -172,6 +173,19 @@ export function LiveAuctionRoomPage() {
         <Link to={`/tournaments/${tournamentId}/auction`} className="text-xs font-medium text-text-secondary hover:text-primary">
           ← Back to auction sessions
         </Link>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-text-secondary">
+          <Link to={`/tournaments/${tournamentId}/auction/${sessionId}/history`} className="hover:text-primary hover:underline">
+            History
+          </Link>
+          <Link to={`/tournaments/${tournamentId}/auction/${sessionId}/teams`} className="hover:text-primary hover:underline">
+            Team Dashboard
+          </Link>
+          {isCompleted && (
+            <Link to={`/tournaments/${tournamentId}/auction/${sessionId}/summary`} className="hover:text-primary hover:underline">
+              Full Summary
+            </Link>
+          )}
+        </div>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-live">Live Player Auction</p>
@@ -452,21 +466,7 @@ export function LiveAuctionRoomPage() {
         </div>
       )}
 
-      {isCompleted && report && (
-        <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-text-primary">Auction report</h2>
-          <div className="mt-3 flex flex-col gap-2">
-            {report.teams.map((t) => (
-              <div key={t.tournamentTeamId} className="flex items-center justify-between text-sm">
-                <span className="text-text-primary">{t.teamName}</span>
-                <span className="text-text-secondary">
-                  {t.playersBought} players · spent {t.totalSpent} · purse left {t.purseRemaining ?? '—'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {isCompleted && report && <AuctionCompletionSummary report={report} />}
 
       {confirmAction === 'sold' &&
         currentLot &&

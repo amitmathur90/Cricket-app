@@ -6,9 +6,12 @@ import '../../features/auth/application/session_controller.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/auction/presentation/auction_history_screen.dart';
+import '../../features/auction/presentation/auction_player_bid_history_screen.dart';
 import '../../features/auction/presentation/auction_report_screen.dart';
 import '../../features/auction/presentation/auction_session_detail_screen.dart';
 import '../../features/auction/presentation/auction_session_list_screen.dart';
+import '../../features/auction/presentation/auction_team_dashboard_screen.dart';
 import '../../features/captain/presentation/captain_home_screen.dart';
 import '../../features/coaches/presentation/coaches_list_screen.dart';
 import '../../features/finance/data/models/finance_transaction.dart';
@@ -123,6 +126,24 @@ String auctionSessionDetailPath(String tournamentId, String sessionId) =>
 
 String auctionReportPath(String tournamentId, String sessionId) =>
     '/admin/tournaments/$tournamentId/auction/$sessionId/report';
+
+/// Player-by-player table with a drill-down into each player's full bid
+/// history (see [auctionPlayerBidHistoryPath]) — see `AuctionHistoryScreen`.
+String auctionHistoryPath(String tournamentId, String sessionId) =>
+    '/admin/tournaments/$tournamentId/auction/$sessionId/history';
+
+/// One player's complete bid history within one session — see
+/// `AuctionPlayerBidHistoryScreen`. Optionally pushed with `extra: <String>`
+/// (the player's name) from AuctionHistoryScreen, which already has it
+/// loaded, so the app bar has a title before this screen's own fetch
+/// resolves.
+String auctionPlayerBidHistoryPath(String tournamentId, String sessionId, String playerId) =>
+    '/admin/tournaments/$tournamentId/auction/$sessionId/history/$playerId';
+
+/// Per-team purse/spend/squad standing plus purchased-players lists for one
+/// session — see `AuctionTeamDashboardScreen`.
+String auctionTeamDashboardPath(String tournamentId, String sessionId) =>
+    '/admin/tournaments/$tournamentId/auction/$sessionId/teams';
 
 /// Team detail — always reached from within a tournament's Teams tab (see
 /// TeamListTab), so a team's auction/roster context can be scoped to that
@@ -530,6 +551,29 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/tournaments/:tournamentId/auction/:sessionId/report',
         builder: (context, state) => AuctionReportScreen(
+          tournamentId: state.pathParameters['tournamentId']!,
+          sessionId: state.pathParameters['sessionId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/tournaments/:tournamentId/auction/:sessionId/history',
+        builder: (context, state) => AuctionHistoryScreen(
+          tournamentId: state.pathParameters['tournamentId']!,
+          sessionId: state.pathParameters['sessionId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/tournaments/:tournamentId/auction/:sessionId/history/:playerId',
+        builder: (context, state) => AuctionPlayerBidHistoryScreen(
+          tournamentId: state.pathParameters['tournamentId']!,
+          sessionId: state.pathParameters['sessionId']!,
+          playerId: state.pathParameters['playerId']!,
+          playerName: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/tournaments/:tournamentId/auction/:sessionId/teams',
+        builder: (context, state) => AuctionTeamDashboardScreen(
           tournamentId: state.pathParameters['tournamentId']!,
           sessionId: state.pathParameters['sessionId']!,
         ),
