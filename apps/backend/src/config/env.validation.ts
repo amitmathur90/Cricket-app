@@ -46,6 +46,40 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CORS_ORIGIN?: string;
+
+  // --- SMTP (password-reset OTP emails) — all optional so the app still
+  // boots without them (e.g. local dev); AuthService throws a clear error
+  // at send-time if a caller reaches the forgot-password flow with these
+  // unset, rather than failing bootstrap entirely.
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsBooleanString()
+  SMTP_SECURE?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_FROM_NAME?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_FROM_EMAIL?: string;
 }
 
 /**

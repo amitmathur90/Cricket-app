@@ -8,7 +8,10 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SelectOrgDto } from './dto/select-org.dto';
+import { VerifyPasswordResetOtpDto } from './dto/verify-password-reset-otp.dto';
 
 @ApiTags('auth')
 @UseGuards(JwtAuthGuard)
@@ -37,6 +40,36 @@ export class AuthController {
   @ApiOperation({ summary: 'Rotate a refresh token for a new access/refresh token pair' })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password')
+  @ApiOperation({
+    summary:
+      'Step 1 of password reset — emails a 6-digit OTP to the account matching this email/phone. ' +
+      'Always returns the same generic message, whether or not a matching account exists.',
+  })
+  forgotPassword(@Body() dto: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(dto.identifier);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password/verify-otp')
+  @ApiOperation({
+    summary: 'Step 2 of password reset — verifies the OTP and returns a resetToken for step 3',
+  })
+  verifyPasswordResetOtp(@Body() dto: VerifyPasswordResetOtpDto) {
+    return this.authService.verifyPasswordResetOtp(dto.identifier, dto.otp);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Step 3 of password reset — sets a new password using the verified resetToken' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.resetToken, dto.newPassword);
   }
 
   // Intentionally NOT @Public(): selecting an org requires knowing who is

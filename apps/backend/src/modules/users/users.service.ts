@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrgMembership } from '../../database/entities/org-membership.entity';
 import { User } from '../../database/entities/user.entity';
+import { UpdateMeDto } from './dto/update-me.dto';
 
 @Injectable()
 export class UsersService {
@@ -18,6 +19,13 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async updateMe(userId: string, dto: UpdateMeDto): Promise<User> {
+    const user = await this.getById(userId);
+    if (dto.fullName !== undefined) user.fullName = dto.fullName;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    return this.userRepo.save(user);
   }
 
   async getMemberships(userId: string): Promise<OrgMembership[]> {

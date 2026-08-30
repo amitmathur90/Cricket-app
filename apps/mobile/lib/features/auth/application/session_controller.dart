@@ -186,6 +186,7 @@ class SessionController extends StateNotifier<SessionState> {
     required String email,
     required String password,
     required String fullName,
+    String? phone,
   }) async {
     state = state.copyWith(isBusy: true, clearError: true);
     try {
@@ -193,6 +194,7 @@ class SessionController extends StateNotifier<SessionState> {
         email: email,
         password: password,
         fullName: fullName,
+        phone: phone,
       );
       await _tokenStorage.saveTokens(
         accessToken: result.accessToken,

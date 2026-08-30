@@ -1,8 +1,9 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
@@ -16,6 +17,14 @@ export class UsersController {
   @ApiOperation({ summary: 'Get the current authenticated user' })
   async me(@CurrentUser() user: AuthenticatedUser) {
     const record = await this.usersService.getById(user.userId);
+    const { passwordHash: _passwordHash, ...safe } = record;
+    return safe;
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: "Update the current user's own profile (fullName/phone)" })
+  async updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMeDto) {
+    const record = await this.usersService.updateMe(user.userId, dto);
     const { passwordHash: _passwordHash, ...safe } = record;
     return safe;
   }

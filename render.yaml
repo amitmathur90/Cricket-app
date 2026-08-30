@@ -42,6 +42,23 @@ services:
       # wired automatically here. Falls back to '*' (open) until set.
       - key: CORS_ORIGIN
         value: "*"
+      # SMTP — sends the "Forgot password" OTP email (see MailService).
+      # SMTP_PASS uses sync:false so the actual secret is never committed to
+      # git; set its real value once in the Render dashboard instead.
+      - key: SMTP_HOST
+        value: "smtp.hostinger.com"
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_SECURE
+        value: "true"
+      - key: SMTP_USER
+        value: "info@itsdigitalindia.co.in"
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: "Cricket League"
+      - key: SMTP_FROM_EMAIL
+        value: "info@itsdigitalindia.co.in"
 
   # Vite-built React admin dashboard, served as a static site. VITE_API_BASE_URL
   # is baked in at build time, so it must be set to the backend's real URL

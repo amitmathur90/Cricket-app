@@ -86,7 +86,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     validator: Validators.password,
                     onFieldSubmitted: (_) => _submit(),
                   ),
-                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: session.isBusy ? null : () => context.push(forgotPasswordPath),
+                      child: const Text('Forgot password?'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   FilledButton(
                     onPressed: session.isBusy ? null : _submit,
                     child: session.isBusy

@@ -4,15 +4,18 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrgMembership } from '../../database/entities/org-membership.entity';
+import { PasswordResetToken } from '../../database/entities/password-reset-token.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { User } from '../../database/entities/user.entity';
+import { MailModule } from '../mail/mail.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, OrgMembership, RefreshToken]),
+    TypeOrmModule.forFeature([User, OrgMembership, RefreshToken, PasswordResetToken]),
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

@@ -14,13 +14,46 @@ class AuthRepository {
     required String email,
     required String password,
     required String fullName,
+    String? phone,
   }) async {
     final response = await _apiClient.post('/auth/register', data: {
       'email': email,
       'password': password,
       'fullName': fullName,
+      if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
     });
     return AuthResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Step 1 of "Forgot password" — [identifier] is the account's email or
+  /// phone. Backend always returns the same generic message regardless of
+  /// whether a matching account exists, so there's nothing to branch on
+  /// here beyond surfacing an actual network/server error.
+  Future<String> requestPasswordReset(String identifier) async {
+    final response = await _apiClient.post('/auth/forgot-password', data: {
+      'identifier': identifier,
+    });
+    return (response.data as Map<String, dynamic>)['message'] as String;
+  }
+
+  /// Step 2 — verifies the OTP and returns the opaque resetToken step 3 needs.
+  Future<String> verifyPasswordResetOtp({
+    required String identifier,
+    required String otp,
+  }) async {
+    final response = await _apiClient.post('/auth/forgot-password/verify-otp', data: {
+      'identifier': identifier,
+      'otp': otp,
+    });
+    return (response.data as Map<String, dynamic>)['resetToken'] as String;
+  }
+
+  /// Step 3 — sets the new password using the resetToken from step 2.
+  Future<void> resetPassword({required String resetToken, required String newPassword}) async {
+    await _apiClient.post('/auth/reset-password', data: {
+      'resetToken': resetToken,
+      'newPassword': newPassword,
+    });
   }
 
   Future<AuthResult> login({required String email, required String password}) async {

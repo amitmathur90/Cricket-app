@@ -17,6 +17,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
@@ -24,6 +25,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   void dispose() {
     _fullNameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -34,6 +36,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
           fullName: _fullNameController.text.trim(),
+          phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
         );
   }
 
@@ -74,6 +77,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     keyboardType: TextInputType.emailAddress,
                     autofillHints: const [AutofillHints.email],
                     validator: Validators.email,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Mobile number (optional)',
+                      helperText: 'Lets you use "Forgot password" with your phone too',
+                    ),
+                    keyboardType: TextInputType.phone,
+                    autofillHints: const [AutofillHints.telephoneNumber],
                   ),
                   const SizedBox(height: 16),
                   TextFormField(

@@ -15,6 +15,15 @@ export interface AppConfig {
   cors: {
     origin: string;
   };
+  smtp: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    pass: string;
+    fromName: string;
+    fromEmail: string;
+  };
 }
 
 /**
@@ -38,5 +47,14 @@ export default (): AppConfig => ({
   },
   cors: {
     origin: process.env.CORS_ORIGIN ?? '*',
+  },
+  smtp: {
+    host: process.env.SMTP_HOST ?? '',
+    port: parseInt(process.env.SMTP_PORT ?? '465', 10),
+    secure: process.env.SMTP_SECURE !== 'false',
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    fromName: process.env.SMTP_FROM_NAME ?? 'Cricket League',
+    fromEmail: process.env.SMTP_FROM_EMAIL ?? process.env.SMTP_USER ?? '',
   },
 });

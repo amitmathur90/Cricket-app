@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/application/session_controller.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
@@ -67,6 +68,7 @@ import '../../features/venues/presentation/venues_list_screen.dart';
 const splashPath = '/splash';
 const loginPath = '/auth/login';
 const registerPath = '/auth/register';
+const forgotPasswordPath = '/auth/forgot-password';
 const selectOrgPath = '/auth/select-org';
 const createOrgPath = '/auth/create-organization';
 const joinOrgPath = '/auth/join-organization';
@@ -347,6 +349,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           // "Public Fan section" doc comment above `publicFanHomePath`.
           return (location == loginPath ||
                   location == registerPath ||
+                  location == forgotPasswordPath ||
                   _isPublicFanRoute(location))
               ? null
               : loginPath;
@@ -369,6 +372,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           final onPreAuthRoute = location == splashPath ||
               location == loginPath ||
               location == registerPath ||
+              location == forgotPasswordPath ||
               location == selectOrgPath ||
               location == createOrgPath ||
               location == joinOrgPath;
@@ -393,6 +397,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: splashPath, builder: (context, state) => const SplashScreen()),
       GoRoute(path: loginPath, builder: (context, state) => const LoginScreen()),
       GoRoute(path: registerPath, builder: (context, state) => const RegisterScreen()),
+      GoRoute(path: forgotPasswordPath, builder: (context, state) => const ForgotPasswordScreen()),
       GoRoute(path: selectOrgPath, builder: (context, state) => const OrgSelectScreen()),
       GoRoute(path: createOrgPath, builder: (context, state) => const CreateOrganizationScreen()),
       GoRoute(path: joinOrgPath, builder: (context, state) => const JoinOrganizationScreen()),

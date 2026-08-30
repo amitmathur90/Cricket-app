@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -9,19 +10,27 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 import { OrgRole } from '../../common/enums/org-role.enum';
 import {
   OrgMembership,
   OrgMembershipStatus,
 } from '../../database/entities/org-membership.entity';
+import { PasswordResetToken } from '../../database/entities/password-reset-token.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { User } from '../../database/entities/user.entity';
+import { MailService } from '../mail/mail.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAccessPayload } from './strategies/jwt.strategy';
 
 const BCRYPT_SALT_ROUNDS = 12;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
+const MAX_OTP_ATTEMPTS = 5;
+/** Generic response for every forgot-password request, found account or not — never reveals whether the identifier matched a real account. */
+const GENERIC_RESET_REQUESTED_MESSAGE =
+  'If an account matches that email or phone number, a password reset code has been sent.';
 
 export interface AuthTokens {
   accessToken: string;
@@ -43,8 +52,11 @@ export class AuthService {
     private readonly membershipRepo: Repository<OrgMembership>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    @InjectRepository(PasswordResetToken)
+    private readonly passwordResetTokenRepo: Repository<PasswordResetToken>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ user: SafeUser } & AuthTokens> {
@@ -61,6 +73,7 @@ export class AuthService {
           email: dto.email,
           passwordHash,
           fullName: dto.fullName,
+          phone: dto.phone ?? null,
         }),
       );
     } catch (err) {
@@ -199,6 +212,120 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
+   * Step 1 of "Forgot password" — looks the account up by email OR phone
+   * (see RegisterDto.phone), generates a 6-digit OTP, and emails it. Always
+   * returns the same generic message whether or not a matching account
+   * exists, to avoid leaking which emails/phone numbers are registered.
+   * Any previous, still-open request for this user is superseded (not
+   * strictly deleted — just left to expire) by simply inserting a fresh
+   * row; verifyPasswordResetOtp only ever considers the most recent one.
+   */
+  async requestPasswordReset(identifier: string): Promise<{ message: string }> {
+    const trimmed = identifier.trim();
+    const user = await this.userRepo.findOne({
+      where: trimmed.includes('@') ? { email: trimmed } : { phone: trimmed },
+    });
+
+    if (user) {
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      await this.passwordResetTokenRepo.save(
+        this.passwordResetTokenRepo.create({
+          userId: user.id,
+          otpHash: this.hashToken(otp),
+          otpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
+        }),
+      );
+      await this.mailService.sendPasswordResetOtp(user.email, otp);
+    }
+
+    return { message: GENERIC_RESET_REQUESTED_MESSAGE };
+  }
+
+  /**
+   * Step 2 — verifies the OTP for whichever account [identifier] resolves
+   * to, against the most recent not-yet-consumed request for that user.
+   * On success, mints a separate opaque reset token (never the OTP itself)
+   * that resetPassword requires — this is what stands between "guessed a
+   * 6-digit code" and "can actually change the password", and gives the
+   * client a bearer credential for step 3 without re-sending the OTP.
+   */
+  async verifyPasswordResetOtp(identifier: string, otp: string): Promise<{ resetToken: string }> {
+    const trimmed = identifier.trim();
+    const user = await this.userRepo.findOne({
+      where: trimmed.includes('@') ? { email: trimmed } : { phone: trimmed },
+    });
+    // Same invalid-OTP message whether the account doesn't exist or the
+    // code is simply wrong — again, don't leak which identifiers are real.
+    const invalid = () => new UnauthorizedException('Invalid or expired code');
+    if (!user) {
+      throw invalid();
+    }
+
+    const request = await this.passwordResetTokenRepo.findOne({
+      where: { userId: user.id, consumedAt: IsNull(), otpExpiresAt: MoreThan(new Date()) },
+      order: { createdAt: 'DESC' },
+    });
+    if (!request || request.otpVerifiedAt) {
+      throw invalid();
+    }
+    if (request.otpAttempts >= MAX_OTP_ATTEMPTS) {
+      throw new UnauthorizedException('Too many attempts — request a new code');
+    }
+
+    if (request.otpHash !== this.hashToken(otp)) {
+      request.otpAttempts += 1;
+      await this.passwordResetTokenRepo.save(request);
+      throw invalid();
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    request.otpVerifiedAt = new Date();
+    request.resetTokenHash = this.hashToken(resetToken);
+    request.resetTokenExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+    await this.passwordResetTokenRepo.save(request);
+
+    return { resetToken };
+  }
+
+  /**
+   * Step 3 — consumes the reset token from verifyPasswordResetOtp and sets
+   * the new password. Also revokes every existing refresh token for the
+   * user (forces re-login on all devices), the same reasonable security
+   * posture as a real password change should have.
+   */
+  async resetPassword(resetToken: string, newPassword: string): Promise<{ message: string }> {
+    const resetTokenHash = this.hashToken(resetToken);
+    const request = await this.passwordResetTokenRepo.findOne({
+      where: {
+        resetTokenHash,
+        consumedAt: IsNull(),
+        resetTokenExpiresAt: MoreThan(new Date()),
+      },
+    });
+    if (!request) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: request.userId } });
+    if (!user) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await this.userRepo.save(user);
+
+    request.consumedAt = new Date();
+    await this.passwordResetTokenRepo.save(request);
+
+    await this.refreshTokenRepo.update(
+      { userId: user.id, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+
+    return { message: 'Password reset successfully' };
   }
 
   /** Parses simple durations like "30d", "15m", "12h", "45s" into milliseconds. */
