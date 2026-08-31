@@ -42,23 +42,23 @@ services:
       # wired automatically here. Falls back to '*' (open) until set.
       - key: CORS_ORIGIN
         value: "*"
-      # SMTP — sends the "Forgot password" OTP email (see MailService).
-      # SMTP_PASS uses sync:false so the actual secret is never committed to
-      # git; set its real value once in the Render dashboard instead.
-      - key: SMTP_HOST
-        value: "smtp.hostinger.com"
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_SECURE
-        value: "true"
-      - key: SMTP_USER
-        value: "info@itsdigitalindia.co.in"
-      - key: SMTP_PASS
+      # Resend — sends the "Forgot password" OTP email via HTTPS API (see
+      # MailService's doc comment for why not raw SMTP: Render's outbound
+      # network silently blocks SMTP ports, confirmed via a real deploy).
+      # RESEND_API_KEY uses sync:false so the actual secret is never
+      # committed to git; set its real value once in the Render dashboard
+      # instead.
+      - key: RESEND_API_KEY
         sync: false
-      - key: SMTP_FROM_NAME
+      - key: MAIL_FROM_NAME
         value: "Cricket League"
-      - key: SMTP_FROM_EMAIL
-        value: "info@itsdigitalindia.co.in"
+      # onboarding@resend.dev is Resend's sandbox sender, usable without
+      # domain verification but restricted to sending TO the Resend
+      # account's own signup address. Once itsdigitalindia.co.in is
+      # verified in Resend, change this to an address on that domain to
+      # send to any recipient.
+      - key: MAIL_FROM_EMAIL
+        value: "onboarding@resend.dev"
 
   # Vite-built React admin dashboard, served as a static site. VITE_API_BASE_URL
   # is baked in at build time, so it must be set to the backend's real URL

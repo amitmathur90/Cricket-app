@@ -15,12 +15,8 @@ export interface AppConfig {
   cors: {
     origin: string;
   };
-  smtp: {
-    host: string;
-    port: number;
-    secure: boolean;
-    user: string;
-    pass: string;
+  mail: {
+    resendApiKey: string;
     fromName: string;
     fromEmail: string;
   };
@@ -48,13 +44,14 @@ export default (): AppConfig => ({
   cors: {
     origin: process.env.CORS_ORIGIN ?? '*',
   },
-  smtp: {
-    host: process.env.SMTP_HOST ?? '',
-    port: parseInt(process.env.SMTP_PORT ?? '465', 10),
-    secure: process.env.SMTP_SECURE !== 'false',
-    user: process.env.SMTP_USER ?? '',
-    pass: process.env.SMTP_PASS ?? '',
-    fromName: process.env.SMTP_FROM_NAME ?? 'Cricket League',
-    fromEmail: process.env.SMTP_FROM_EMAIL ?? process.env.SMTP_USER ?? '',
+  mail: {
+    resendApiKey: process.env.RESEND_API_KEY ?? '',
+    fromName: process.env.MAIL_FROM_NAME ?? 'Cricket League',
+    // onboarding@resend.dev is Resend's built-in sandbox sender, usable
+    // with no domain verification — but Resend then only allows sending TO
+    // the account's own signup address until a domain is verified. Once
+    // itsdigitalindia.co.in is verified in Resend, set MAIL_FROM_EMAIL to
+    // an address on that domain to send to any recipient.
+    fromEmail: process.env.MAIL_FROM_EMAIL ?? 'onboarding@resend.dev',
   },
 });
