@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuthStore } from '../../../core/auth/authStore'
 import { Field, TextInput, PrimaryButton, ErrorText } from '../../../shared/components/FormPrimitives'
 
@@ -43,6 +44,11 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </Field>
+          <div className="-mt-2 text-right">
+            <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           <ErrorText>{errorMessage}</ErrorText>
           <PrimaryButton type="submit" disabled={isBusy}>
             {isBusy ? 'Signing in…' : 'Sign in'}

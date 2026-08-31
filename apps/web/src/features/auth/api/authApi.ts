@@ -32,6 +32,30 @@ export const authApi = {
     })
     return data.accessToken
   },
+
+  /** Step 1 of "Forgot password" — identifier is the account's email or
+   * phone. Backend always returns the same generic message regardless of
+   * whether a matching account exists. */
+  async requestPasswordReset(identifier: string): Promise<string> {
+    const { data } = await apiClient.post<{ message: string }>('/auth/forgot-password', {
+      identifier,
+    })
+    return data.message
+  },
+
+  /** Step 2 — verifies the OTP and returns the opaque resetToken step 3 needs. */
+  async verifyPasswordResetOtp(identifier: string, otp: string): Promise<string> {
+    const { data } = await apiClient.post<{ resetToken: string }>('/auth/forgot-password/verify-otp', {
+      identifier,
+      otp,
+    })
+    return data.resetToken
+  },
+
+  /** Step 3 — sets the new password using the resetToken from step 2. */
+  async resetPassword(resetToken: string, newPassword: string): Promise<void> {
+    await apiClient.post('/auth/reset-password', { resetToken, newPassword })
+  },
 }
 
 export const usersApi = {

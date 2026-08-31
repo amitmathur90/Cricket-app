@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { AuthGate } from './AuthGate'
 import { LoginPage } from '../../features/auth/pages/LoginPage'
+import { ForgotPasswordPage } from '../../features/auth/pages/ForgotPasswordPage'
 import { OrgSelectPage } from '../../features/auth/pages/OrgSelectPage'
 import { CreateOrganizationPage } from '../../features/organizations/pages/CreateOrganizationPage'
 import { PageShell } from '../../shared/components/PageShell'
@@ -32,6 +33,7 @@ export function AppRoutes() {
     <AuthGate>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/select-org" element={<OrgSelectPage />} />
         <Route path="/create-organization" element={<CreateOrganizationPage />} />
 

@@ -15,7 +15,11 @@ const EXPECTED_PATH: Record<AuthStatus, string | null> = {
   authenticated: null, // any path under the authenticated app is fine
 }
 
-const PRE_AUTH_PATHS = ['/login', '/select-org', '/create-organization']
+// /forgot-password is reachable from 'unauthenticated' too (in addition to
+// its EXPECTED_PATH, '/login') — see the allowlist check below.
+const UNAUTHENTICATED_EXTRA_PATHS = ['/forgot-password']
+
+const PRE_AUTH_PATHS = ['/login', '/forgot-password', '/select-org', '/create-organization']
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const status = useAuthStore((s) => s.status)
@@ -30,7 +34,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   const expected = EXPECTED_PATH[status]
-  if (expected && location.pathname !== expected) {
+  const onAllowedExtraPath =
+    status === 'unauthenticated' && UNAUTHENTICATED_EXTRA_PATHS.includes(location.pathname)
+  if (expected && location.pathname !== expected && !onAllowedExtraPath) {
     return <Navigate to={expected} replace />
   }
 
