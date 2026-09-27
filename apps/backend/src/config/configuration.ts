@@ -20,6 +20,9 @@ export interface AppConfig {
     fromName: string;
     fromEmail: string;
   };
+  sms: {
+    renflairApiKey: string;
+  };
 }
 
 /**
@@ -53,5 +56,8 @@ export default (): AppConfig => ({
     // itsdigitalindia.co.in is verified in Resend, set MAIL_FROM_EMAIL to
     // an address on that domain to send to any recipient.
     fromEmail: process.env.MAIL_FROM_EMAIL ?? 'onboarding@resend.dev',
+  },
+  sms: {
+    renflairApiKey: process.env.RENFLAIR_API_KEY ?? '',
   },
 });

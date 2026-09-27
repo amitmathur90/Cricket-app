@@ -63,6 +63,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   MAIL_FROM_EMAIL?: string;
+
+  // --- Renflair (mobile-OTP login SMS — see SmsService's doc comment for
+  // why not a mainstream provider: bypasses needing our own DLT
+  // registration to text Indian numbers) — optional so the app still boots
+  // without it.
+  @IsOptional()
+  @IsString()
+  RENFLAIR_API_KEY?: string;
 }
 
 /**

@@ -8,9 +8,11 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RequestMobileLoginOtpDto } from './dto/request-mobile-login-otp.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SelectOrgDto } from './dto/select-org.dto';
+import { VerifyMobileLoginOtpDto } from './dto/verify-mobile-login-otp.dto';
 import { VerifyPasswordResetOtpDto } from './dto/verify-password-reset-otp.dto';
 
 @ApiTags('auth')
@@ -70,6 +72,30 @@ export class AuthController {
   @ApiOperation({ summary: 'Step 3 of password reset — sets a new password using the verified resetToken' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.resetToken, dto.newPassword);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('login/mobile/request-otp')
+  @ApiOperation({
+    summary:
+      'Step 1 of "Login with mobile OTP" — texts a 6-digit OTP (via Renflair) to the account matching ' +
+      'this phone number. Always returns the same generic message, whether or not a matching account exists.',
+  })
+  requestMobileLoginOtp(@Body() dto: RequestMobileLoginOtpDto) {
+    return this.authService.requestMobileLoginOtp(dto.phone);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('login/mobile/verify-otp')
+  @ApiOperation({
+    summary:
+      'Step 2 of "Login with mobile OTP" — verifies the OTP and, on success, issues real access/refresh ' +
+      'tokens (same shape as POST /auth/login).',
+  })
+  verifyMobileLoginOtp(@Body() dto: VerifyMobileLoginOtpDto) {
+    return this.authService.verifyMobileLoginOtp(dto.phone, dto.otp);
   }
 
   // Intentionally NOT @Public(): selecting an org requires knowing who is

@@ -3,6 +3,7 @@ export * from './user.entity';
 export * from './org-membership.entity';
 export * from './refresh-token.entity';
 export * from './password-reset-token.entity';
+export * from './mobile-login-otp.entity';
 export * from './tournament.entity';
 export * from './tournament-group.entity';
 export * from './team.entity';
@@ -36,6 +37,7 @@ import { User } from './user.entity';
 import { OrgMembership } from './org-membership.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { PasswordResetToken } from './password-reset-token.entity';
+import { MobileLoginOtp } from './mobile-login-otp.entity';
 import { Tournament } from './tournament.entity';
 import { TournamentGroup } from './tournament-group.entity';
 import { Team } from './team.entity';
@@ -75,6 +77,7 @@ export const allEntities = [
   OrgMembership,
   RefreshToken,
   PasswordResetToken,
+  MobileLoginOtp,
   Tournament,
   TournamentGroup,
   Team,
