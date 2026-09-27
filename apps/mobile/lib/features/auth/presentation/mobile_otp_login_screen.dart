@@ -7,7 +7,12 @@ import '../application/session_controller.dart';
 
 enum _Step { phone, otp }
 
-/// "Login with mobile OTP" — Step 1 (phone) texts a 6-digit OTP via
+/// Renflair's API sends a 4-digit OTP (unlike the 6-digit email OTPs used
+/// elsewhere in this app) — see AuthService.requestMobileLoginOtp's doc
+/// comment.
+const _otpLength = 4;
+
+/// "Login with mobile OTP" — Step 1 (phone) texts a 4-digit OTP via
 /// SmsService/Renflair, Step 2 (OTP) logs in directly on success (see
 /// SessionController.loginWithMobileOtp). Same "one route, internal step
 /// index" pattern as ForgotPasswordScreen; unlike that flow, a successful
@@ -28,8 +33,8 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
 
   final _phoneController = TextEditingController();
   final List<TextEditingController> _otpControllers =
-      List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
+      List.generate(_otpLength, (_) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes = List.generate(_otpLength, (_) => FocusNode());
 
   @override
   void dispose() {
@@ -86,8 +91,8 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
 
   Future<void> _submitOtp() async {
     final otp = _otp;
-    if (otp.length != 6) {
-      setState(() => _requestError = 'Enter the 6-digit code');
+    if (otp.length != _otpLength) {
+      setState(() => _requestError = 'Enter the $_otpLength-digit code');
       return;
     }
     await ref.read(sessionControllerProvider.notifier).loginWithMobileOtp(
@@ -97,7 +102,7 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
   }
 
   void _onOtpChanged(int index, String value) {
-    if (value.isNotEmpty && index < 5) {
+    if (value.isNotEmpty && index < _otpLength - 1) {
       _otpFocusNodes[index + 1].requestFocus();
     } else if (value.isEmpty && index > 0) {
       _otpFocusNodes[index - 1].requestFocus();
@@ -162,12 +167,12 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
                     children: [
                       Text('Enter the code', style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
-                      const Text('Enter the 6-digit code sent to your mobile number'),
+                      const Text('Enter the $_otpLength-digit code sent to your mobile number'),
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          for (var i = 0; i < 6; i++)
+                          for (var i = 0; i < _otpLength; i++)
                             SizedBox(
                               width: 44,
                               child: TextField(

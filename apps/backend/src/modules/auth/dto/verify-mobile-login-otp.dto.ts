@@ -7,9 +7,9 @@ export class VerifyMobileLoginOtpDto {
   @IsNotEmpty()
   phone: string;
 
-  @ApiProperty({ example: '123456' })
+  @ApiProperty({ example: '1234', description: 'Renflair sends a 4-digit code, unlike the 6-digit email OTPs' })
   @IsString()
-  @Length(6, 6)
-  @Matches(/^\d{6}$/, { message: 'otp must be a 6-digit code' })
+  @Length(4, 4)
+  @Matches(/^\d{4}$/, { message: 'otp must be a 4-digit code' })
   otp: string;
 }

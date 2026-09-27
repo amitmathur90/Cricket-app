@@ -341,17 +341,19 @@ export class AuthService {
   }
 
   /**
-   * Step 1 of "Login with mobile OTP" — texts a 6-digit OTP to the account
-   * matching this phone number, via SmsService (Renflair). Always returns
-   * the same generic message whether or not a matching account exists,
-   * same anti-enumeration posture as requestPasswordReset.
+   * Step 1 of "Login with mobile OTP" — texts a 4-digit OTP (Renflair's own
+   * API doc specifies a 4-digit code, unlike the 6-digit email OTP used
+   * elsewhere in this file) to the account matching this phone number, via
+   * SmsService. Always returns the same generic message whether or not a
+   * matching account exists, same anti-enumeration posture as
+   * requestPasswordReset.
    */
   async requestMobileLoginOtp(phone: string): Promise<{ message: string }> {
     const normalizedPhone = SmsService.normalizePhone(phone);
     const user = await this.userRepo.findOne({ where: { phone: normalizedPhone } });
 
     if (user) {
-      const otp = crypto.randomInt(100000, 1000000).toString();
+      const otp = crypto.randomInt(1000, 10000).toString();
       await this.mobileLoginOtpRepo.save(
         this.mobileLoginOtpRepo.create({
           userId: user.id,
