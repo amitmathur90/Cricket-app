@@ -22,6 +22,11 @@ export interface AppConfig {
   };
   sms: {
     renflairApiKey: string;
+    /** See AuthService.requestMobileLoginOtp's doc comment — an explicit,
+     * opt-in testing toggle, deliberately NOT tied to nodeEnv (the deployed
+     * Render backend runs with NODE_ENV=production, which is exactly where
+     * this is needed for testing while SMS credits are unavailable). */
+    devOtpFallback: boolean;
   };
 }
 
@@ -59,5 +64,6 @@ export default (): AppConfig => ({
   },
   sms: {
     renflairApiKey: process.env.RENFLAIR_API_KEY ?? '',
+    devOtpFallback: process.env.DEV_OTP_FALLBACK === 'true',
   },
 });

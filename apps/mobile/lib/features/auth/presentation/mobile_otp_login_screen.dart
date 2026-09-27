@@ -31,6 +31,11 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
   bool _requestBusy = false;
   String? _requestError;
 
+  /// Set only when the backend's DEV_OTP_FALLBACK testing toggle is on and
+  /// real SMS sending failed — see AuthRepository.requestMobileLoginOtp's
+  /// doc comment. Null in normal operation.
+  String? _devOtp;
+
   final _phoneController = TextEditingController();
   final List<TextEditingController> _otpControllers =
       List.generate(_otpLength, (_) => TextEditingController());
@@ -61,13 +66,27 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
       _requestError = null;
     });
     try {
-      await ref.read(authRepositoryProvider).requestMobileLoginOtp(phone);
+      final result = await ref.read(authRepositoryProvider).requestMobileLoginOtp(phone);
       if (!mounted) return;
-      setState(() => _step = _Step.otp);
+      setState(() {
+        _step = _Step.otp;
+        _devOtp = result.devOtp;
+      });
+      _applyDevOtpIfPresent();
     } on ApiException catch (e) {
       setState(() => _requestError = e.message);
     } finally {
       if (mounted) setState(() => _requestBusy = false);
+    }
+  }
+
+  /// Pre-fills the OTP boxes when the backend handed back a devOtp, so the
+  /// dev-fallback flow doesn't also require manually retyping it.
+  void _applyDevOtpIfPresent() {
+    final devOtp = _devOtp;
+    if (devOtp == null || devOtp.length != _otpLength) return;
+    for (var i = 0; i < _otpLength; i++) {
+      _otpControllers[i].text = devOtp[i];
     }
   }
 
@@ -77,8 +96,11 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
       _requestError = null;
     });
     try {
-      await ref.read(authRepositoryProvider).requestMobileLoginOtp(_phoneController.text.trim());
+      final result =
+          await ref.read(authRepositoryProvider).requestMobileLoginOtp(_phoneController.text.trim());
       if (!mounted) return;
+      setState(() => _devOtp = result.devOtp);
+      _applyDevOtpIfPresent();
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('A new code has been sent')));
@@ -168,6 +190,20 @@ class _MobileOtpLoginScreenState extends ConsumerState<MobileOtpLoginScreen> {
                       Text('Enter the code', style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
                       const Text('Enter the $_otpLength-digit code sent to your mobile number'),
+                      if (_devOtp != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'DEV MODE — SMS delivery failed, code pre-filled below: $_devOtp',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,

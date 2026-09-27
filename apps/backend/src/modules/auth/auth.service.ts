@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -50,6 +51,8 @@ export interface SafeUser {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(OrgMembership)
@@ -347,11 +350,23 @@ export class AuthService {
    * SmsService. Always returns the same generic message whether or not a
    * matching account exists, same anti-enumeration posture as
    * requestPasswordReset.
+   *
+   * Dev OTP fallback: when `sms.devOtpFallback` is explicitly enabled
+   * (env `DEV_OTP_FALLBACK=true` — off by default, see configuration.ts's
+   * doc comment) AND the real SMS send fails (e.g. Renflair balance
+   * unavailable), the OTP is also returned in the response as `devOtp`
+   * instead of failing the request — lets the rest of the flow be tested
+   * while SMS delivery itself is unresolved. This is a real security
+   * bypass of the OTP's whole purpose (anyone could read the code straight
+   * from the response, no possession of the phone required) — it must
+   * stay off outside of deliberate testing, and the caller is responsible
+   * for turning it back off once real SMS delivery works.
    */
-  async requestMobileLoginOtp(phone: string): Promise<{ message: string }> {
+  async requestMobileLoginOtp(phone: string): Promise<{ message: string; devOtp?: string }> {
     const normalizedPhone = SmsService.normalizePhone(phone);
     const user = await this.userRepo.findOne({ where: { phone: normalizedPhone } });
 
+    let devOtp: string | undefined;
     if (user) {
       const otp = crypto.randomInt(1000, 10000).toString();
       await this.mobileLoginOtpRepo.save(
@@ -361,10 +376,20 @@ export class AuthService {
           otpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
         }),
       );
-      await this.smsService.sendOtp(normalizedPhone, otp);
+      try {
+        await this.smsService.sendOtp(normalizedPhone, otp);
+      } catch (err) {
+        if (!this.configService.get<boolean>('sms.devOtpFallback')) {
+          throw err;
+        }
+        this.logger.warn(
+          `SMS send failed for ${normalizedPhone}; DEV_OTP_FALLBACK is on, returning OTP in the response instead of failing.`,
+        );
+        devOtp = otp;
+      }
     }
 
-    return { message: GENERIC_LOGIN_OTP_REQUESTED_MESSAGE };
+    return { message: GENERIC_LOGIN_OTP_REQUESTED_MESSAGE, ...(devOtp ? { devOtp } : {}) };
   }
 
   /**

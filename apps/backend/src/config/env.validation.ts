@@ -71,6 +71,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   RENFLAIR_API_KEY?: string;
+
+  // --- Explicit opt-in testing toggle — see AuthService.requestMobileLoginOtp
+  // and configuration.ts's doc comment on sms.devOtpFallback. Defaults off;
+  // only ever set to "true" deliberately, and turned back off once real SMS
+  // delivery is confirmed working.
+  @IsOptional()
+  @IsBooleanString()
+  DEV_OTP_FALLBACK?: string;
 }
 
 /**

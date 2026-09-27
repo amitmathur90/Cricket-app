@@ -64,14 +64,18 @@ class AuthRepository {
     return AuthResult.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// Step 1 of "Login with mobile OTP" — texts a 6-digit OTP to the account
+  /// Step 1 of "Login with mobile OTP" — texts a 4-digit OTP to the account
   /// matching [phone]. Same generic-message-regardless-of-match posture as
-  /// requestPasswordReset.
-  Future<String> requestMobileLoginOtp(String phone) async {
+  /// requestPasswordReset. `devOtp` is only ever present when the backend's
+  /// DEV_OTP_FALLBACK testing toggle is on AND the real SMS send failed —
+  /// see AuthService.requestMobileLoginOtp's doc comment; null in normal
+  /// operation.
+  Future<({String message, String? devOtp})> requestMobileLoginOtp(String phone) async {
     final response = await _apiClient.post('/auth/login/mobile/request-otp', data: {
       'phone': phone,
     });
-    return (response.data as Map<String, dynamic>)['message'] as String;
+    final data = response.data as Map<String, dynamic>;
+    return (message: data['message'] as String, devOtp: data['devOtp'] as String?);
   }
 
   /// Step 2 — verifies the OTP and, on success, returns real access/refresh

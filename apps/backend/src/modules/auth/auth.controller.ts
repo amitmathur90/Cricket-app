@@ -79,8 +79,10 @@ export class AuthController {
   @Post('login/mobile/request-otp')
   @ApiOperation({
     summary:
-      'Step 1 of "Login with mobile OTP" — texts a 6-digit OTP (via Renflair) to the account matching ' +
-      'this phone number. Always returns the same generic message, whether or not a matching account exists.',
+      'Step 1 of "Login with mobile OTP" — texts a 4-digit OTP (via Renflair) to the account matching ' +
+      'this phone number. Always returns the same generic message, whether or not a matching account exists. ' +
+      'If DEV_OTP_FALLBACK=true and the SMS send fails, the response also includes a devOtp field with the ' +
+      'code — an explicit opt-in testing aid, off by default; see AuthService.requestMobileLoginOtp.',
   })
   requestMobileLoginOtp(@Body() dto: RequestMobileLoginOtpDto) {
     return this.authService.requestMobileLoginOtp(dto.phone);
