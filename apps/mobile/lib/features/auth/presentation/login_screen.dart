@@ -105,6 +105,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : const Text('Sign in'),
                   ),
                   const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: session.isBusy ? null : () => context.push(mobileOtpLoginPath),
+                    child: const Text('Login with mobile OTP'),
+                  ),
+                  const SizedBox(height: 12),
                   TextButton(
                     onPressed: session.isBusy ? null : () => context.push(registerPath),
                     child: const Text("Don't have an account? Register"),

@@ -64,6 +64,26 @@ class AuthRepository {
     return AuthResult.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Step 1 of "Login with mobile OTP" — texts a 6-digit OTP to the account
+  /// matching [phone]. Same generic-message-regardless-of-match posture as
+  /// requestPasswordReset.
+  Future<String> requestMobileLoginOtp(String phone) async {
+    final response = await _apiClient.post('/auth/login/mobile/request-otp', data: {
+      'phone': phone,
+    });
+    return (response.data as Map<String, dynamic>)['message'] as String;
+  }
+
+  /// Step 2 — verifies the OTP and, on success, returns real access/refresh
+  /// tokens (same shape as [login]).
+  Future<AuthResult> verifyMobileLoginOtp({required String phone, required String otp}) async {
+    final response = await _apiClient.post('/auth/login/mobile/verify-otp', data: {
+      'phone': phone,
+      'otp': otp,
+    });
+    return AuthResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Mints a new access token scoped to [organizationId]. Note the backend
   /// only returns `{ accessToken }` here — the refresh token from
   /// login/register keeps working and isn't reissued (see

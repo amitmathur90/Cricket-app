@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/application/session_controller.dart';
 import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/mobile_otp_login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/auction/presentation/auction_history_screen.dart';
@@ -69,6 +70,7 @@ const splashPath = '/splash';
 const loginPath = '/auth/login';
 const registerPath = '/auth/register';
 const forgotPasswordPath = '/auth/forgot-password';
+const mobileOtpLoginPath = '/auth/mobile-otp-login';
 const selectOrgPath = '/auth/select-org';
 const createOrgPath = '/auth/create-organization';
 const joinOrgPath = '/auth/join-organization';
@@ -350,6 +352,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return (location == loginPath ||
                   location == registerPath ||
                   location == forgotPasswordPath ||
+                  location == mobileOtpLoginPath ||
                   _isPublicFanRoute(location))
               ? null
               : loginPath;
@@ -373,6 +376,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               location == loginPath ||
               location == registerPath ||
               location == forgotPasswordPath ||
+              location == mobileOtpLoginPath ||
               location == selectOrgPath ||
               location == createOrgPath ||
               location == joinOrgPath;
@@ -398,6 +402,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: loginPath, builder: (context, state) => const LoginScreen()),
       GoRoute(path: registerPath, builder: (context, state) => const RegisterScreen()),
       GoRoute(path: forgotPasswordPath, builder: (context, state) => const ForgotPasswordScreen()),
+      GoRoute(path: mobileOtpLoginPath, builder: (context, state) => const MobileOtpLoginScreen()),
       GoRoute(path: selectOrgPath, builder: (context, state) => const OrgSelectScreen()),
       GoRoute(path: createOrgPath, builder: (context, state) => const CreateOrganizationScreen()),
       GoRoute(path: joinOrgPath, builder: (context, state) => const JoinOrganizationScreen()),

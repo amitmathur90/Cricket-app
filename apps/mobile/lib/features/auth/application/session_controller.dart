@@ -182,6 +182,27 @@ class SessionController extends StateNotifier<SessionState> {
     }
   }
 
+  /// Step 2 of "Login with mobile OTP" — verifies the OTP and, on success,
+  /// logs in exactly like [login] (same token-save + resolve flow), since
+  /// a verified OTP issues real access/refresh tokens directly.
+  Future<void> loginWithMobileOtp({required String phone, required String otp}) async {
+    state = state.copyWith(isBusy: true, clearError: true);
+    try {
+      final result = await _authRepository.verifyMobileLoginOtp(phone: phone, otp: otp);
+      await _tokenStorage.saveTokens(
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      );
+      await _resolveFromAccessToken(result.accessToken);
+    } on ApiException catch (e) {
+      state = state.copyWith(
+        isBusy: false,
+        status: AuthStatus.unauthenticated,
+        errorMessage: e.message,
+      );
+    }
+  }
+
   Future<void> register({
     required String email,
     required String password,
