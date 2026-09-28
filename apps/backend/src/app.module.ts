@@ -16,6 +16,7 @@ import { PlayersModule } from './modules/players/players.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { PracticeModule } from './modules/practice/practice.module';
 import { PublicModule } from './modules/public/public.module';
+import { QuickMatchModule } from './modules/quick-match/quick-match.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { SponsorsModule } from './modules/sponsors/sponsors.module';
 import { TeamsModule } from './modules/teams/teams.module';
@@ -64,6 +65,7 @@ import { VenuesModule } from './modules/venues/venues.module';
     NotificationsModule,
     PostsModule,
     PublicModule,
+    QuickMatchModule,
   ],
 })
 export class AppModule {}

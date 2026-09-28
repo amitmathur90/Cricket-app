@@ -251,7 +251,12 @@ export class TournamentsService {
   }
 
   async findAll(organizationId: string): Promise<TournamentResponse[]> {
-    const tournaments = await findManyOrgScoped(this.tournamentRepo, organizationId);
+    // Excludes the hidden per-org "Quick Match" pool tournament (see
+    // Tournament.isQuickMatchPool's doc comment) — it's plumbing, never a
+    // real tournament a client should list/manage.
+    const tournaments = await findManyOrgScoped(this.tournamentRepo, organizationId, {
+      isQuickMatchPool: false,
+    });
     const teamsCountMap = await this.getTeamsCountMap(tournaments.map((t) => t.id));
     return tournaments.map((tournament) =>
       this.toResponse(tournament, teamsCountMap.get(tournament.id) ?? 0),

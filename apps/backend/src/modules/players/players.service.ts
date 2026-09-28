@@ -6,13 +6,15 @@ import { Ball, DismissalType, ExtraType } from '../../database/entities/ball.ent
 import { Innings } from '../../database/entities/innings.entity';
 import { Match, MatchStatus } from '../../database/entities/match.entity';
 import { NotificationType } from '../../database/entities/notification.entity';
-import { Player, PlayerVerificationStatus } from '../../database/entities/player.entity';
+import { Player, PlayerRole, PlayerVerificationStatus } from '../../database/entities/player.entity';
 import { TeamPlayer } from '../../database/entities/team-player.entity';
 import { TournamentTeam } from '../../database/entities/tournament-team.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SmsService } from '../sms/sms.service';
 import { AddToRosterDto } from './dto/add-to-roster.dto';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { DEFAULT_RANKINGS_LIMIT, RankingMetric } from './dto/player-rankings-query.dto';
+import { QuickAddPlayerDto } from './dto/quick-add-player.dto';
 import { RatePlayerDto } from './dto/rate-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
 import { VerifyPlayerDto } from './dto/verify-player.dto';
@@ -293,6 +295,37 @@ export class PlayersService {
     }
 
     return teamPlayer;
+  }
+
+  /**
+   * Backs the Quick Match "Add via phone number" roster flow — finds an
+   * existing org player by phone (normalized the same way
+   * AuthService/UsersService store it, so formatting doesn't matter), or
+   * creates a minimal one (role defaults to BATSMAN, editable later via
+   * the normal player profile — asking for a role at this quick-add step
+   * would defeat the point of it being quick), then adds them straight to
+   * the roster via the exact same addToRoster path as the full flow.
+   */
+  async quickAddByPhone(
+    organizationId: string,
+    tournamentTeamId: string,
+    dto: QuickAddPlayerDto,
+  ): Promise<TeamPlayer> {
+    const normalizedPhone = SmsService.normalizePhone(dto.phone);
+    let player = await findOneOrgScoped(this.playerRepo, organizationId, { phone: normalizedPhone });
+
+    if (!player) {
+      player = await this.playerRepo.save(
+        this.playerRepo.create({
+          organizationId,
+          fullName: dto.fullName?.trim() || normalizedPhone,
+          phone: normalizedPhone,
+          role: PlayerRole.BATSMAN,
+        }),
+      );
+    }
+
+    return this.addToRoster(organizationId, player.id, tournamentTeamId, {});
   }
 
   // ---------------------------------------------------------------------

@@ -19,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { AddToRosterDto } from './dto/add-to-roster.dto';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { PlayerRankingsQueryDto } from './dto/player-rankings-query.dto';
+import { QuickAddPlayerDto } from './dto/quick-add-player.dto';
 import { RatePlayerDto } from './dto/rate-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
 import { VerifyPlayerDto } from './dto/verify-player.dto';
@@ -127,6 +128,24 @@ export class PlayersController {
     @Param('playerId', ParseUUIDPipe) playerId: string,
   ) {
     return this.playersService.getStatistics(organizationId, playerId);
+  }
+
+  // Registered BEFORE ':playerId/tournament-teams/...' below — otherwise
+  // the literal segment "quick-add" would be swallowed by the :playerId
+  // param on that route (same precedent as 'rankings' above :playerId).
+  @Post('quick-add/tournament-teams/:tournamentTeamId/roster')
+  @Roles(OrgRole.ORG_ADMIN, OrgRole.TOURNAMENT_ADMIN)
+  @ApiOperation({
+    summary:
+      'Find-or-create a player by phone number and add them straight to a tournament-team roster in one ' +
+      'call — the Quick Match "Add via phone number" flow (see PlayersService.quickAddByPhone).',
+  })
+  quickAddByPhone(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('tournamentTeamId', ParseUUIDPipe) tournamentTeamId: string,
+    @Body() dto: QuickAddPlayerDto,
+  ) {
+    return this.playersService.quickAddByPhone(organizationId, tournamentTeamId, dto);
   }
 
   @Post(':playerId/tournament-teams/:tournamentTeamId/roster')

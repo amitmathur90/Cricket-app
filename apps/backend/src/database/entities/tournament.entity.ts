@@ -59,6 +59,17 @@ export class Tournament {
   @Column({ name: 'auction_enabled', type: 'boolean', default: false })
   auctionEnabled: boolean;
 
+  /**
+   * Marks the one hidden, auto-created tournament per organization that
+   * backs "Quick Match" (start a match between two ad-hoc teams with no
+   * tournament setup — see QuickMatchService). Never shown in tournament
+   * lists/management UI; exists purely so every existing tournament-scoped
+   * piece (team registration, rosters, lineups, scoring) works unchanged
+   * for quick matches too, with zero duplicated infrastructure.
+   */
+  @Column({ name: 'is_quick_match_pool', type: 'boolean', default: false })
+  isQuickMatchPool: boolean;
+
   // --- Basic info ---
 
   @Column({ name: 'logo_url', type: 'varchar', length: 512, nullable: true })
