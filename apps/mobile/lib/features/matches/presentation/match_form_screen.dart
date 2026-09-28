@@ -35,13 +35,26 @@ import '../data/models/match.dart';
 /// no free-text legacy field (there never was one — see the entity doc
 /// comment), so its dropdown is the only way to assign one.
 class MatchFormScreen extends ConsumerStatefulWidget {
-  const MatchFormScreen({super.key, required this.tournamentId, this.existing});
+  const MatchFormScreen({
+    super.key,
+    required this.tournamentId,
+    this.existing,
+    this.initialHomeTournamentTeamId,
+    this.initialAwayTournamentTeamId,
+  });
 
   final String tournamentId;
 
   /// When non-null, the form opens pre-filled with this match's data and
   /// submits via PATCH instead of POST.
   final Match? existing;
+
+  /// Pre-selects the home/away team dropdowns — used by the Quick Match
+  /// flow, which already knows exactly which two teams were just picked/
+  /// created and shouldn't make the user re-select them from what may be a
+  /// long dropdown. Ignored when [existing] is set (its own teams win).
+  final String? initialHomeTournamentTeamId;
+  final String? initialAwayTournamentTeamId;
 
   @override
   ConsumerState<MatchFormScreen> createState() => _MatchFormScreenState();
@@ -82,6 +95,9 @@ class _MatchFormScreenState extends ConsumerState<MatchFormScreen> {
       _umpireOfficialId = existing.umpireOfficialId;
       _scorerOfficialId = existing.scorerOfficialId;
       _matchRefereeOfficialId = existing.matchRefereeOfficialId;
+    } else {
+      _homeTournamentTeamId = widget.initialHomeTournamentTeamId;
+      _awayTournamentTeamId = widget.initialAwayTournamentTeamId;
     }
   }
 
@@ -157,7 +173,7 @@ class _MatchFormScreenState extends ConsumerState<MatchFormScreen> {
           matchDetailProvider((tournamentId: widget.tournamentId, matchId: matchId)),
         );
       } else {
-        await repo.create(
+        final created = await repo.create(
           organizationId,
           widget.tournamentId,
           homeTournamentTeamId: _homeTournamentTeamId,
@@ -171,6 +187,14 @@ class _MatchFormScreenState extends ConsumerState<MatchFormScreen> {
           scorerOfficialId: _scorerOfficialId,
           matchRefereeOfficialId: _matchRefereeOfficialId,
         );
+        ref.invalidate(matchesListProvider);
+        if (!mounted) return;
+        // Returns the created match on pop (existing callers that push this
+        // route without awaiting a result are unaffected) — Quick Match
+        // uses it to jump straight to MatchDetailScreen instead of landing
+        // back on a list the user never asked to see.
+        context.pop(created);
+        return;
       }
       ref.invalidate(matchesListProvider);
       if (!mounted) return;

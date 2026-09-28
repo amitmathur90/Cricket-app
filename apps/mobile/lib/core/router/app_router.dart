@@ -50,6 +50,9 @@ import '../../features/public/presentation/public_posts_screen.dart';
 import '../../features/public/presentation/public_rankings_screen.dart';
 import '../../features/public/presentation/public_sponsors_screen.dart';
 import '../../features/public/presentation/public_teams_screen.dart';
+import '../../features/quick_match/presentation/quick_match_teams_screen.dart';
+import '../../features/quick_match/presentation/quick_team_picker_screen.dart';
+import '../../features/quick_match/presentation/quick_team_roster_screen.dart';
 import '../../features/public/presentation/public_tournament_detail_screen.dart';
 import '../../features/public/presentation/public_tournament_list_screen.dart';
 import '../../features/scoring/presentation/live_scoring_screen.dart';
@@ -157,12 +160,40 @@ String teamDetailPath(String tournamentId, String teamId) =>
 
 /// The match create/edit form (see `MatchFormScreen`). One route handles
 /// both: pass `extra: <Match>` to open it in edit mode pre-filled with that
-/// match's data, or no `extra` to create a new one — same pattern as
-/// [createTournamentPath].
+/// match's data, `extra: QuickMatchTeams(...)` to pre-select the home/away
+/// dropdowns (Quick Match, which already knows the two teams), or no
+/// `extra` to create a blank new one — same pattern as [createTournamentPath].
 String matchFormPath(String tournamentId) => '/admin/tournaments/$tournamentId/matches/form';
+
+/// `extra` payload for [matchFormPath] when opening it pre-filled from
+/// Quick Match's team-selection step — see `MatchFormScreen`'s
+/// `initialHomeTournamentTeamId`/`initialAwayTournamentTeamId`.
+class QuickMatchTeams {
+  const QuickMatchTeams({required this.homeTournamentTeamId, required this.awayTournamentTeamId});
+
+  final String homeTournamentTeamId;
+  final String awayTournamentTeamId;
+}
 
 String matchDetailPath(String tournamentId, String matchId) =>
     '/admin/tournaments/$tournamentId/matches/$matchId';
+
+/// Quick Match entry point — "Select playing teams" (see
+/// QuickMatchTeamsScreen). No tournament id in the path: the screen
+/// resolves the caller's hidden per-org Quick Match tournament itself via
+/// quickMatchTournamentIdProvider.
+const quickMatchPath = '/quick-match';
+
+/// Quick Match's team picker — pick an existing quick-match team or create
+/// a new one. `extra` is the OTHER slot's already-picked tournamentTeamId
+/// (String?), excluded from the list so the same team can't fill both
+/// sides; pops with the chosen `TournamentTeamOption`.
+String quickMatchPickTeamPath(String tournamentId) => '/quick-match/tournaments/$tournamentId/pick-team';
+
+/// Quick Match's roster-building screen for a freshly created team — see
+/// QuickTeamRosterScreen. `extra` is the team's display name (String).
+String quickMatchRosterPath(String tournamentId, String teamId, String tournamentTeamId) =>
+    '/quick-match/tournaments/$tournamentId/teams/$teamId/roster/$tournamentTeamId';
 
 /// "Select Playing XI" for one side (home or away, identified by
 /// `tournamentTeamId`) of a match — see LineupSelectionScreen.
@@ -424,6 +455,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: createPlayerPath,
         builder: (context, state) => const CreatePlayerScreen(),
       ),
+      GoRoute(path: quickMatchPath, builder: (context, state) => const QuickMatchTeamsScreen()),
+      GoRoute(
+        path: '/quick-match/tournaments/:tournamentId/pick-team',
+        builder: (context, state) => QuickTeamPickerScreen(
+          tournamentId: state.pathParameters['tournamentId']!,
+          excludeTournamentTeamId: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+      GoRoute(
+        path: '/quick-match/tournaments/:tournamentId/teams/:teamId/roster/:tournamentTeamId',
+        builder: (context, state) => QuickTeamRosterScreen(
+          tournamentId: state.pathParameters['tournamentId']!,
+          teamId: state.pathParameters['teamId']!,
+          tournamentTeamId: state.pathParameters['tournamentTeamId']!,
+          teamName: state.extra is String ? state.extra as String : 'Team',
+        ),
+      ),
       GoRoute(
         path: '/admin/players/:playerId/statistics',
         builder: (context, state) => PlayerStatisticsScreen(player: state.extra! as Player),
@@ -454,10 +502,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Static segment declared before the ':matchId' route below so it
         // matches first — go_router tests top-level routes in list order.
         path: '/admin/tournaments/:tournamentId/matches/form',
-        builder: (context, state) => MatchFormScreen(
-          tournamentId: state.pathParameters['tournamentId']!,
-          existing: state.extra is Match ? state.extra as Match : null,
-        ),
+        builder: (context, state) {
+          final quickTeams = state.extra is QuickMatchTeams ? state.extra as QuickMatchTeams : null;
+          return MatchFormScreen(
+            tournamentId: state.pathParameters['tournamentId']!,
+            existing: state.extra is Match ? state.extra as Match : null,
+            initialHomeTournamentTeamId: quickTeams?.homeTournamentTeamId,
+            initialAwayTournamentTeamId: quickTeams?.awayTournamentTeamId,
+          );
+        },
       ),
       GoRoute(
         path: '/admin/tournaments/:tournamentId/matches/:matchId',

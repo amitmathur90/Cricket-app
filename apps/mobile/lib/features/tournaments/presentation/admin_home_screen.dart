@@ -273,9 +273,39 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       floatingActionButton: organizationId == null
           ? null
           : FloatingActionButton(
-              onPressed: () => context.push(createTournamentPath),
+              onPressed: () => _showCreateMenu(context),
               child: const Icon(Icons.add),
             ),
+    );
+  }
+
+  void _showCreateMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.bolt),
+              title: const Text('Quick match'),
+              subtitle: const Text('Start a match right now — no tournament setup'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push(quickMatchPath);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.emoji_events),
+              title: const Text('Create tournament'),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push(createTournamentPath);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

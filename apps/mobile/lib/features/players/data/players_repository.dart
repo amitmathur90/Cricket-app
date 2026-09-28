@@ -161,4 +161,37 @@ class PlayersRepository {
     final response = await _apiClient.get('/organizations/$organizationId/players/$playerId/statistics');
     return PlayerStatistics.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// Adds an existing org-level player to a tournament-team's roster —
+  /// `POST .../players/:playerId/tournament-teams/:tournamentTeamId/roster`
+  /// (`AddToRosterDto`). Backs Quick Match's "Add existing player" flow.
+  Future<void> addToRoster(
+    String organizationId,
+    String playerId,
+    String tournamentTeamId,
+  ) async {
+    await _apiClient.post(
+      '/organizations/$organizationId/players/$playerId/tournament-teams/$tournamentTeamId/roster',
+      data: const {},
+    );
+  }
+
+  /// Find-or-create a player by phone number and add them straight to a
+  /// tournament-team roster in one call — `POST .../players/quick-add/
+  /// tournament-teams/:tournamentTeamId/roster` (`QuickAddPlayerDto`).
+  /// Backs Quick Match's "Add via phone number" flow.
+  Future<void> quickAddByPhone(
+    String organizationId,
+    String tournamentTeamId, {
+    required String phone,
+    String? fullName,
+  }) async {
+    await _apiClient.post(
+      '/organizations/$organizationId/players/quick-add/tournament-teams/$tournamentTeamId/roster',
+      data: {
+        'phone': phone,
+        if (fullName != null && fullName.trim().isNotEmpty) 'fullName': fullName.trim(),
+      },
+    );
+  }
 }

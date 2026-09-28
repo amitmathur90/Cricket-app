@@ -66,8 +66,10 @@ final matchLineupProvider =
 });
 
 /// One tournament-registered team, resolved with its `tournament_teams` id
-/// (needed for match home/away assignment) and display name.
-typedef TournamentTeamOption = ({String tournamentTeamId, String teamName});
+/// (needed for match home/away assignment), its plain org-level `teamId`
+/// (needed for roster lookups, which are keyed by team+tournament — see
+/// TeamsRepository.getRoster), and display name.
+typedef TournamentTeamOption = ({String tournamentTeamId, String teamId, String teamName});
 
 /// Teams registered to a tournament — backs the match form's home/away team
 /// dropdowns. Backed by `GET .../tournaments/:tournamentId/teams`
@@ -86,6 +88,7 @@ final tournamentTeamsProvider =
   return rows
       .map((r) => (
             tournamentTeamId: r['tournamentTeamId'] as String,
+            teamId: r['teamId'] as String,
             teamName: r['teamName'] as String,
           ))
       .toList();

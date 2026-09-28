@@ -44,6 +44,24 @@ class TeamsRepository {
     return Team.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Registers an org-level team into a tournament (creates the
+  /// tournament_teams row) — `POST .../teams/:teamId/tournaments/:tournamentId/register`
+  /// (`RegisterTeamToTournamentDto`, all fields optional). Returns the new
+  /// tournament_teams row's id. Used by both the normal tournament Teams
+  /// tab and Quick Match (which registers ad-hoc teams into the hidden
+  /// per-org quick-match tournament — see QuickMatchService on the backend).
+  Future<String> registerToTournament(
+    String organizationId,
+    String teamId,
+    String tournamentId,
+  ) async {
+    final response = await _apiClient.post(
+      '/organizations/$organizationId/teams/$teamId/tournaments/$tournamentId/register',
+      data: const {},
+    );
+    return (response.data as Map<String, dynamic>)['id'] as String;
+  }
+
   /// Lists a tournament-team's roster (squad) — player details, captain/
   /// vice-captain flags, jersey number, wicketkeeper — ordered captain-first
   /// (see `TeamsService.getRoster`).
