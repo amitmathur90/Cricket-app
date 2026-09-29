@@ -19,6 +19,16 @@ const _unauthenticatedPaths = ['/auth/login', '/auth/register', '/auth/refresh']
 bool _isUnauthenticatedPath(String path) =>
     _unauthenticatedPaths.any((p) => path.startsWith(p));
 
+/// Render's free tier sleeps the backend after inactivity; the first
+/// request after that can take 50-90s to wake it, well past the normal
+/// 15s timeout — that showed up as a hard connection/receive-timeout error
+/// on login with no way to recover except manually retrying. Instead, a
+/// request that times out gets ONE automatic retry with a much longer
+/// timeout, so a cold start resolves itself instead of surfacing as a
+/// failure. A second timeout (genuinely unreachable backend) still fails
+/// normally rather than hanging forever.
+const _coldStartRetryTimeout = Duration(seconds: 90);
+
 /// Dio-based API client talking to the NestJS backend.
 ///
 /// Responsibilities:
@@ -154,6 +164,22 @@ class ApiClient {
   /// Exposed so the auth interceptor can retry the original request through
   /// the same configured Dio instance (interceptors, base URL, etc).
   Dio get rawDio => _dio;
+
+  /// Fires a lightweight, unauthenticated request the moment the app
+  /// starts — purely to start waking up a sleeping Render backend as early
+  /// as possible (see `_coldStartRetryTimeout`'s doc comment), so by the
+  /// time someone finishes typing their email/password the backend is
+  /// often already awake and the real login request lands fast instead of
+  /// needing the timeout retry at all. Errors are deliberately ignored —
+  /// this is a best-effort head start, not a request anything waits on.
+  Future<void> warmUp() async {
+    try {
+      await Dio(BaseOptions(baseUrl: Env.apiBaseUrl, connectTimeout: _coldStartRetryTimeout))
+          .get<dynamic>('/');
+    } catch (_) {
+      // Best-effort — see doc comment above.
+    }
+  }
 }
 
 class _AuthInterceptor extends Interceptor {
@@ -175,6 +201,25 @@ class _AuthInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     final requestOptions = err.requestOptions;
+
+    final isTimeout = err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.receiveTimeout ||
+        err.type == DioExceptionType.sendTimeout;
+    final alreadyTimeoutRetried = requestOptions.extra['ammctTimeoutRetried'] == true;
+    if (isTimeout && !alreadyTimeoutRetried) {
+      requestOptions.extra['ammctTimeoutRetried'] = true;
+      requestOptions.connectTimeout = _coldStartRetryTimeout;
+      requestOptions.receiveTimeout = _coldStartRetryTimeout;
+      requestOptions.sendTimeout = _coldStartRetryTimeout;
+      try {
+        final retried = await _client.rawDio.fetch(requestOptions);
+        handler.resolve(retried);
+      } on DioException catch (retryError) {
+        handler.next(retryError);
+      }
+      return;
+    }
+
     final alreadyRetried = requestOptions.extra['ammctRetried'] == true;
 
     final shouldAttemptRefresh = err.response?.statusCode == 401 &&

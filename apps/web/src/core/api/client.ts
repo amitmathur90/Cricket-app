@@ -38,7 +38,18 @@ apiClient.interceptors.request.use((config) => {
 
 interface RetriableConfig extends InternalAxiosRequestConfig {
   _ammctRetried?: boolean
+  _ammctTimeoutRetried?: boolean
 }
+
+/** Render's free tier sleeps the backend after inactivity; the first
+ * request after that can take 50-90s to wake it, well past the normal
+ * 15s timeout — that showed up as a hard "timeout of 15000ms exceeded"
+ * error on login with no way to recover except manually retrying. Instead,
+ * a request that times out gets ONE automatic retry with a much longer
+ * timeout, so a cold start resolves itself instead of surfacing as a
+ * failure. A second timeout (genuinely unreachable backend) still fails
+ * normally rather than hanging forever. */
+const COLD_START_RETRY_TIMEOUT_MS = 90_000
 
 let refreshInFlight: Promise<string | null> | null = null
 
@@ -78,6 +89,14 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const config = error.config as RetriableConfig | undefined
+
+    const isTimeout = error.code === 'ECONNABORTED' && /timeout/i.test(error.message)
+    if (isTimeout && config != null && !config._ammctTimeoutRetried) {
+      config._ammctTimeoutRetried = true
+      config.timeout = COLD_START_RETRY_TIMEOUT_MS
+      return apiClient.request(config)
+    }
+
     const shouldAttemptRefresh =
       error.response?.status === 401 &&
       config != null &&
@@ -101,6 +120,18 @@ apiClient.interceptors.response.use(
 )
 
 export { refreshAccessToken }
+
+/** Fires a lightweight, unauthenticated request the moment the app loads —
+ * purely to start waking up a sleeping Render backend as early as possible
+ * (see COLD_START_RETRY_TIMEOUT_MS's doc comment), so by the time someone
+ * finishes typing their email/password the backend is often already awake
+ * and the real login request lands fast instead of needing the timeout
+ * retry at all. Errors are deliberately ignored — this is a best-effort
+ * head start, not a request anything waits on. */
+export function warmUpBackend(): void {
+  const plain = axios.create({ baseURL, timeout: COLD_START_RETRY_TIMEOUT_MS })
+  plain.get('/').catch(() => undefined)
+}
 
 /** Multipart upload helper — axios sets its own multipart boundary from
  * FormData automatically, but the shared instance's default JSON
