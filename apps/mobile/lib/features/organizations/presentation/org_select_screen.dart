@@ -63,6 +63,13 @@ class OrgSelectScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           FloatingActionButton.extended(
+            heroTag: 'discover-tournaments',
+            onPressed: session.isBusy ? null : () => context.push(discoverTournamentsPath),
+            icon: const Icon(Icons.travel_explore_outlined),
+            label: const Text('Discover tournaments'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
             heroTag: 'join-org',
             onPressed: session.isBusy ? null : () => context.push(joinOrgPath),
             icon: const Icon(Icons.qr_code),

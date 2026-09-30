@@ -78,9 +78,21 @@ class PlayerHomeTab extends ConsumerWidget {
               child: ListTile(
                 leading: const Icon(Icons.emoji_events_outlined),
                 title: const Text('Tournaments'),
-                subtitle: const Text('Browse tournaments and apply'),
+                subtitle: const Text('Every public tournament, from any organization'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(playerTournamentsPath),
+                // Every tournament is public by default and must be visible
+                // to every registered user, not just members of the org
+                // that created it — so this pushes the cross-org discovery
+                // feed (`GET /public/tournaments`, no org-membership
+                // required) rather than the old org-scoped
+                // `PlayerTournamentsScreen`/`playerTournamentsPath`. Tapping
+                // a tournament there already leads into
+                // `PublicTournamentDetailScreen`'s "Register as Player" flow
+                // (join the org if needed, then apply) — the tournament
+                // creator sees the resulting applicant list via the
+                // existing, unchanged, org-scoped applications review
+                // screen.
+                onTap: () => context.push(discoverTournamentsPath),
               ),
             ),
           ],

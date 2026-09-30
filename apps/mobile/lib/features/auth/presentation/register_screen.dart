@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/validators.dart';
 import '../application/session_controller.dart';
+import 'widgets/auth_background.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -53,82 +55,126 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Create account')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextFormField(
-                    controller: _fullNameController,
-                    decoration: const InputDecoration(labelText: 'Full name'),
-                    textCapitalization: TextCapitalization.words,
-                    validator: (v) => Validators.required(v, fieldName: 'Full name'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    validator: Validators.email,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Mobile number (optional)',
-                      helperText: 'Lets you use "Forgot password" with your phone too',
+      body: AuthBackground(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: session.isBusy
+                                  ? null
+                                  : () {
+                                      if (context.canPop()) {
+                                        context.pop();
+                                      } else {
+                                        context.go(loginPath);
+                                      }
+                                    },
+                            ),
+                            const SizedBox(width: 8),
+                            Text('Create Account', style: Theme.of(context).textTheme.titleLarge),
+                          ],
+                        ),
+                        Text(
+                          'Join the cricket community',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          controller: _fullNameController,
+                          decoration: const InputDecoration(labelText: 'Full name'),
+                          textCapitalization: TextCapitalization.words,
+                          validator: (v) => Validators.required(v, fieldName: 'Full name'),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _phoneController,
+                          decoration: const InputDecoration(
+                            labelText: 'Mobile number (optional)',
+                            helperText: 'Lets you use "Forgot password" with your phone too',
+                          ),
+                          keyboardType: TextInputType.phone,
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: const InputDecoration(labelText: 'Email address'),
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          validator: Validators.email,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            helperText: 'At least 8 characters',
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                            ),
+                          ),
+                          obscureText: _obscurePassword,
+                          autofillHints: const [AutofillHints.newPassword],
+                          validator: Validators.password,
+                          onFieldSubmitted: (_) => _submit(),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton(
+                          onPressed: session.isBusy ? null : _submit,
+                          child: session.isBusy
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Register'),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'By registering, you agree to our Terms & Conditions and Privacy Policy',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textMuted),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: session.isBusy
+                              ? null
+                              : () {
+                                  if (context.canPop()) {
+                                    context.pop();
+                                  } else {
+                                    context.go(loginPath);
+                                  }
+                                },
+                          child: const Text('Already have an account? Login'),
+                        ),
+                      ],
                     ),
-                    keyboardType: TextInputType.phone,
-                    autofillHints: const [AutofillHints.telephoneNumber],
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      helperText: 'At least 8 characters',
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                      ),
-                    ),
-                    obscureText: _obscurePassword,
-                    autofillHints: const [AutofillHints.newPassword],
-                    validator: Validators.password,
-                    onFieldSubmitted: (_) => _submit(),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: session.isBusy ? null : _submit,
-                    child: session.isBusy
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Create account'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: session.isBusy
-                        ? null
-                        : () {
-                            if (context.canPop()) {
-                              context.pop();
-                            } else {
-                              context.go(loginPath);
-                            }
-                          },
-                    child: const Text('Already have an account? Sign in'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

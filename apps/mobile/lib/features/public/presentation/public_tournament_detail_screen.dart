@@ -6,6 +6,10 @@ import 'package:intl/intl.dart';
 import '../../../core/config/env.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/router/app_router.dart';
+import '../../auth/application/session_controller.dart';
+import '../../organizations/application/organizations_providers.dart';
+import '../../tournament_applications/application/tournament_applications_providers.dart';
+import '../../tournament_applications/presentation/widgets/apply_to_tournament_dialog.dart';
 import '../../tournaments/data/models/tournament.dart' show TournamentFormatX;
 import '../application/public_providers.dart';
 
@@ -16,6 +20,18 @@ import '../application/public_providers.dart';
 /// than tabs (this section has far fewer per-tournament sub-views than the
 /// admin one — no Players/Applications/Auction/Finance tabs, all of which
 /// are admin-only concerns).
+///
+/// Also the entry point for "Register as Player" — reachable whether or not
+/// the caller already belongs to this tournament's organization (this
+/// screen itself is reachable logged-out too; see `_isPublicFanRoute` in
+/// app_router.dart). Registering is a 3-step hand-off across existing,
+/// otherwise-unchanged pieces: join the org via `joinViaTournament` (creates
+/// an ACTIVE player-role membership if the caller doesn't have one yet;
+/// idempotent if they do), `SessionController.selectOrg` to mint a token
+/// actually scoped to that org (needed before the org-scoped upload/apply
+/// endpoints below will accept the caller), then the *existing*
+/// `showApplyToTournamentDialog` + `TournamentApplicationsRepository.apply`
+/// flow already used by `PlayerTournamentsScreen` for in-org applications.
 class PublicTournamentDetailScreen extends ConsumerWidget {
   const PublicTournamentDetailScreen({
     super.key,
@@ -25,6 +41,72 @@ class PublicTournamentDetailScreen extends ConsumerWidget {
 
   final String organizationId;
   final String tournamentId;
+
+  Future<void> _registerAsPlayer(
+    BuildContext context,
+    WidgetRef ref,
+    String tournamentName,
+  ) async {
+    final session = ref.read(sessionControllerProvider);
+    if (session.status != AuthStatus.authenticated) {
+      context.push(loginPath);
+      return;
+    }
+
+    try {
+      await ref.read(organizationsRepositoryProvider).joinViaTournament(tournamentId);
+      await ref.read(sessionControllerProvider.notifier).selectOrg(organizationId);
+      final afterSelect = ref.read(sessionControllerProvider);
+      if (afterSelect.activeOrgId != organizationId) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(afterSelect.errorMessage ?? 'Could not register for this tournament'),
+          ));
+        return;
+      }
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+
+    if (!context.mounted) return;
+    final result = await showApplyToTournamentDialog(
+      context,
+      organizationId: organizationId,
+      tournamentName: tournamentName,
+    );
+    if (result == null) return;
+
+    try {
+      await ref.read(tournamentApplicationsRepositoryProvider).apply(
+            organizationId,
+            tournamentId,
+            fullName: result.fullName,
+            role: result.role,
+            ageCategory: result.ageCategory,
+            previousStatsNotes: result.previousStatsNotes,
+            photoUrl: result.photoUrl,
+            idDocumentUrl: result.idDocumentUrl,
+            battingStyle: result.battingStyle,
+            bowlingStyle: result.bowlingStyle,
+            basePrice: result.basePrice,
+          );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Applied to $tournamentName')));
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -98,7 +180,13 @@ class PublicTournamentDetailScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   Text(tournament.description!),
                 ],
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () => _registerAsPlayer(context, ref, tournament.name),
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: const Text('Register as Player'),
+                ),
+                const SizedBox(height: 16),
                 _NavTile(
                   icon: Icons.groups_outlined,
                   label: 'Teams',

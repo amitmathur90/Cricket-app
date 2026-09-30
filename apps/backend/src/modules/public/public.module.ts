@@ -8,6 +8,7 @@ import { PlayersModule } from '../players/players.module';
 import { PostsModule } from '../posts/posts.module';
 import { ScoringModule } from '../scoring/scoring.module';
 import { TournamentsModule } from '../tournaments/tournaments.module';
+import { PublicDiscoveryController } from './public-discovery.controller';
 import { PublicPlayersController } from './public-players.controller';
 import { PublicPostsController } from './public-posts.controller';
 import { PublicSponsorsController } from './public-sponsors.controller';
@@ -69,6 +70,7 @@ import { PublicTournamentsController } from './public-tournaments.controller';
   ],
   controllers: [
     PublicTournamentsController,
+    PublicDiscoveryController,
     PublicPlayersController,
     PublicSponsorsController,
     PublicPostsController,

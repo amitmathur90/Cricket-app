@@ -101,8 +101,8 @@ class _AddPlayerSheet extends ConsumerStatefulWidget {
   ConsumerState<_AddPlayerSheet> createState() => _AddPlayerSheetState();
 }
 
-class _AddPlayerSheetState extends ConsumerState<_AddPlayerSheet> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 2, vsync: this);
+class _AddPlayerSheetState extends ConsumerState<_AddPlayerSheet> {
+  bool _showExisting = false;
   final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
   bool _busy = false;
@@ -110,7 +110,6 @@ class _AddPlayerSheetState extends ConsumerState<_AddPlayerSheet> with SingleTic
 
   @override
   void dispose() {
-    _tabController.dispose();
     _phoneController.dispose();
     _nameController.dispose();
     super.dispose();
@@ -180,12 +179,16 @@ class _AddPlayerSheetState extends ConsumerState<_AddPlayerSheet> with SingleTic
           height: MediaQuery.of(context).size.height * 0.75,
           child: Column(
             children: [
-              TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Add via phone number'),
-                  Tab(text: 'Add existing player'),
-                ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Add via phone number')),
+                    ButtonSegment(value: true, label: Text('Add existing player')),
+                  ],
+                  selected: {_showExisting},
+                  onSelectionChanged: (selection) => setState(() => _showExisting = selection.first),
+                ),
               ),
               if (_error != null)
                 Padding(
@@ -193,67 +196,63 @@ class _AddPlayerSheetState extends ConsumerState<_AddPlayerSheet> with SingleTic
                   child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 ),
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _phoneController,
-                            decoration: const InputDecoration(labelText: 'Mobile number'),
-                            keyboardType: TextInputType.phone,
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(labelText: 'Name (optional)'),
-                            textCapitalization: TextCapitalization.words,
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: _busy ? null : _addByPhone,
-                            child: _busy
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('Add player'),
-                          ),
-                        ],
+                child: _showExisting
+                    ? playersAsync.when(
+                        data: (players) {
+                          final rosterPlayerIds = rosterAsync.value?.map((r) => r.playerId).toSet() ?? {};
+                          final available = players.where((p) => !rosterPlayerIds.contains(p.id)).toList();
+                          if (available.isEmpty) {
+                            return const Center(child: Text('No other org players available'));
+                          }
+                          return ListView.builder(
+                            itemCount: available.length,
+                            itemBuilder: (context, index) {
+                              final player = available[index];
+                              return ListTile(
+                                leading: const CircleAvatar(child: Icon(Icons.person)),
+                                title: Text(player.fullName),
+                                subtitle: Text(player.role.label),
+                                trailing: _busy ? null : const Icon(Icons.add),
+                                onTap: _busy ? null : () => _addExisting(player.id),
+                              );
+                            },
+                          );
+                        },
+                        loading: () => const Center(child: CircularProgressIndicator()),
+                        error: (error, stackTrace) => Center(
+                          child: Text(error is ApiException ? error.message : 'Failed to load players'),
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: _phoneController,
+                              decoration: const InputDecoration(labelText: 'Mobile number'),
+                              keyboardType: TextInputType.phone,
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(labelText: 'Name (optional)'),
+                              textCapitalization: TextCapitalization.words,
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              onPressed: _busy ? null : _addByPhone,
+                              child: _busy
+                                  ? const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Text('Add player'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    playersAsync.when(
-                      data: (players) {
-                        final rosterPlayerIds = rosterAsync.value?.map((r) => r.playerId).toSet() ?? {};
-                        final available = players.where((p) => !rosterPlayerIds.contains(p.id)).toList();
-                        if (available.isEmpty) {
-                          return const Center(child: Text('No other org players available'));
-                        }
-                        return ListView.builder(
-                          itemCount: available.length,
-                          itemBuilder: (context, index) {
-                            final player = available[index];
-                            return ListTile(
-                              leading: const CircleAvatar(child: Icon(Icons.person)),
-                              title: Text(player.fullName),
-                              subtitle: Text(player.role.label),
-                              trailing: _busy ? null : const Icon(Icons.add),
-                              onTap: _busy ? null : () => _addExisting(player.id),
-                            );
-                          },
-                        );
-                      },
-                      loading: () => const Center(child: CircularProgressIndicator()),
-                      error: (error, stackTrace) => Center(
-                        child: Text(error is ApiException ? error.message : 'Failed to load players'),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),

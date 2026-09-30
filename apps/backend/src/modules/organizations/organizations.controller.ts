@@ -35,6 +35,20 @@ export class OrganizationsController {
     return this.organizationsService.join(dto, user.userId);
   }
 
+  @Post('join-via-tournament/:tournamentId')
+  @ApiOperation({
+    summary:
+      'Join the organization behind a public tournament (auto-creates an ACTIVE player-role ' +
+      'membership if the caller isn\'t already a member) — the first step of the public ' +
+      '"Register as Player" flow, before POST /auth/select-org and the tournament-applications apply call',
+  })
+  joinViaTournament(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
+  ) {
+    return this.organizationsService.joinViaTournament(tournamentId, user.userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get an organization by id (includes its join code)' })
   findOne(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {

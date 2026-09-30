@@ -76,6 +76,10 @@ class AuctionSessionDetailScreen extends ConsumerWidget {
                     tournamentId: tournamentId,
                     sessionId: sessionId,
                   ),
+                // Defensive fallback — every real AuctionSessionStatus value
+                // is already handled above; this only exists so the switch
+                // expression is provably exhaustive to the compiler.
+                _ => const SizedBox.shrink(),
               },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stackTrace) => Center(

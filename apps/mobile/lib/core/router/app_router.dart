@@ -42,6 +42,7 @@ import '../../features/practice/presentation/practice_session_detail_screen.dart
 import '../../features/practice/presentation/practice_session_form_screen.dart';
 import '../../features/practice/presentation/practice_sessions_screen.dart';
 import '../../features/public/data/models/public_post.dart';
+import '../../features/public/presentation/discover_tournaments_screen.dart';
 import '../../features/public/presentation/public_fan_home_screen.dart';
 import '../../features/public/presentation/public_fixtures_screen.dart';
 import '../../features/public/presentation/public_live_match_screen.dart';
@@ -298,6 +299,14 @@ String practiceAttendancePath(String teamId, String sessionId) =>
 // `AuthStatus.unauthenticated` (see the redirect switch below) purely so a
 // future entry point can reuse them without another router change.
 
+/// Cross-org tournament discovery — no `organizationId` segment, unlike
+/// every other public-section path below (that's the point of it; see
+/// `DiscoverTournamentsScreen`). Reachable logged-out, and while logged in
+/// with no org selected yet (see `_isPublicFanRoute` and its two redirect
+/// cases below) — surfaced from `OrgSelectScreen`'s "Discover tournaments"
+/// FAB.
+const discoverTournamentsPath = '/public/discover';
+
 String publicFanHomePath(String organizationId) => '/public/organizations/$organizationId';
 
 String publicTournamentListPath(String organizationId) =>
@@ -337,8 +346,10 @@ String publicSponsorsPath(String organizationId) => '${publicFanHomePath(organiz
 /// True for any location under the public fan section — these routes take a
 /// dynamic `organizationId` segment, so (unlike `loginPath`/`registerPath`)
 /// they can't be checked as exact-string matches in the redirect switch
-/// below.
-bool _isPublicFanRoute(String location) => location.startsWith('/public/organizations/');
+/// below. Covers both the per-org fan section (`/public/organizations/...`)
+/// and the cross-org discovery feed (`discoverTournamentsPath`, which has no
+/// org segment at all — that's the point of it).
+bool _isPublicFanRoute(String location) => location.startsWith('/public/');
 
 /// Bridges Riverpod's [SessionState] changes to go_router's
 /// `refreshListenable`, so route redirects re-evaluate whenever auth status
@@ -391,17 +402,28 @@ final routerProvider = Provider<GoRouter>((ref) {
           // joinOrgPath and createOrgPath are reachable from here too —
           // OrgSelectScreen's "Join with a code" and "New organization" FABs
           // are alternatives to picking one of the caller's existing
-          // memberships.
+          // memberships. The public fan section (incl. cross-org tournament
+          // discovery) is reachable too — OrgSelectScreen's "Discover
+          // tournaments" FAB, same reasoning as the unauthenticated case
+          // above: browsing/registering for a tournament doesn't require an
+          // existing org selection first.
           return (location == selectOrgPath ||
                   location == joinOrgPath ||
-                  location == createOrgPath)
+                  location == createOrgPath ||
+                  _isPublicFanRoute(location))
               ? null
               : selectOrgPath;
         case AuthStatus.needsOrgCreation:
-          // joinOrgPath is reachable from here too — CreateOrganizationScreen's
-          // "Join an organization with a code" option (an alternative to
-          // creating a brand-new org).
-          return (location == createOrgPath || location == joinOrgPath) ? null : createOrgPath;
+          // joinOrgPath and the public fan section are reachable from here
+          // too — CreateOrganizationScreen's "Join an organization with a
+          // code" option, and tournament discovery/registration (see
+          // needsOrgSelection above), are both alternatives to creating a
+          // brand-new org.
+          return (location == createOrgPath ||
+                  location == joinOrgPath ||
+                  _isPublicFanRoute(location))
+              ? null
+              : createOrgPath;
         case AuthStatus.authenticated:
           final onPreAuthRoute = location == splashPath ||
               location == loginPath ||
@@ -680,6 +702,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       // --- Public "Fan" section — see the doc comment above
       // publicFanHomePath for the entry-point/auth-reachability rationale.
+      GoRoute(
+        path: discoverTournamentsPath,
+        builder: (context, state) => const DiscoverTournamentsScreen(),
+      ),
       GoRoute(
         path: '/public/organizations/:organizationId',
         builder: (context, state) => PublicFanHomeScreen(

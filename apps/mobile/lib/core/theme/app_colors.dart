@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
-/// Hand-authored design tokens for the "CricLeague" visual identity —
-/// extracted from the admin dashboard / player-profile / live-scoring
-/// mockups. Screens should reference these instead of raw `Colors.*` so the
-/// palette stays consistent as more screens are redesigned.
+/// Hand-authored design tokens for the "CricketArena" visual identity —
+/// extracted from the 18-screen CricketArena UI mockup (navy hero/header,
+/// bright-blue primary CTAs, green live/positive accents). Screens should
+/// reference these instead of raw `Colors.*` so the palette stays
+/// consistent as more screens are redesigned. Previously a green
+/// "CricLeague" identity (`primary` = 0xFF16A34A) — that hex now lives on
+/// `live`/`positive` instead, so `live` reads as green (matching the
+/// mockup's "Live" badges) rather than its old red.
 class AppColors {
   AppColors._();
 
   // Brand
-  static const primary = Color(0xFF16A34A); // CTA buttons, active nav, links
-  static const primaryLight = Color(0xFF22C55E); // live/positive accents
-  static const primaryDark = Color(0xFF15803D);
+  static const primary = Color(0xFF2563EB); // CTA buttons, active nav, links
+  static const primaryLight = Color(0xFF3B82F6); // lighter blue accents
+  static const primaryDark = Color(0xFF1D4ED8);
 
-  // Sidebar / dark surfaces (drawer header, dark cards)
-  static const navy = Color(0xFF111827);
+  // Navy hero/header surfaces (splash/login/register backgrounds, dark
+  // cards) — also still used for the sidebar/drawer header.
+  static const navy = Color(0xFF0F1B3D);
   static const navySurface = Color(0xFF1E293B);
 
   // Neutral surfaces
@@ -27,7 +32,7 @@ class AppColors {
   static const textMuted = Color(0xFF94A3B8);
 
   // Semantic / status accents
-  static const live = Color(0xFFEF4444);
+  static const live = Color(0xFF16A34A);
   static const info = Color(0xFF3B82F6);
   static const purple = Color(0xFF8B5CF6);
   static const orange = Color(0xFFF97316);

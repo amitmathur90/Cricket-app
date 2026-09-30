@@ -28,6 +28,8 @@ class PublicTournament {
     this.description,
     this.organizerName,
     this.numberOfTeams,
+    this.organizationId,
+    this.organizationName,
   });
 
   factory PublicTournament.fromJson(Map<String, dynamic> json) => PublicTournament(
@@ -42,6 +44,8 @@ class PublicTournament {
         description: json['description'] as String?,
         organizerName: json['organizerName'] as String?,
         numberOfTeams: (json['numberOfTeams'] as num?)?.toInt(),
+        organizationId: json['organizationId'] as String?,
+        organizationName: json['organizationName'] as String?,
       );
 
   final String id;
@@ -59,4 +63,11 @@ class PublicTournament {
   final String? description;
   final String? organizerName;
   final int? numberOfTeams;
+
+  /// Only populated by `GET public/tournaments` (cross-org discovery) — the
+  /// per-org `GET public/organizations/:organizationId/tournaments...`
+  /// endpoints already have the org id in their route, so they don't repeat
+  /// it in the response body.
+  final String? organizationId;
+  final String? organizationName;
 }

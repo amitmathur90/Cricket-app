@@ -13,6 +13,7 @@ import {
   OrgMembershipStatus,
 } from '../../database/entities/org-membership.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { Tournament } from '../../database/entities/tournament.entity';
 import { User } from '../../database/entities/user.entity';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
@@ -30,6 +31,7 @@ export class OrganizationsService {
     @InjectRepository(OrgMembership)
     private readonly membershipRepo: Repository<OrgMembership>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(Tournament) private readonly tournamentRepo: Repository<Tournament>,
   ) {}
 
   async create(dto: CreateOrganizationDto, creatorUserId: string): Promise<Organization> {
@@ -97,6 +99,75 @@ export class OrganizationsService {
       // DB-level conflict too (same pattern as AuthService.register).
       if ((err as { code?: string }).code === '23505') {
         throw new ConflictException('You already have a membership in this organization');
+      }
+      throw err;
+    }
+
+    return {
+      organization: { id: org.id, name: org.name, slug: org.slug },
+      membership,
+    };
+  }
+
+  /**
+   * Self-service join via a public tournament — resolves the org from the
+   * tournament (no org-scoping possible here; the caller doesn't belong to
+   * it yet) and creates an ACTIVE `player`-role membership, same shape as
+   * `join()`. Unlike `join()`, this is idempotent rather than throwing on an
+   * existing membership: revisiting a tournament you've already registered
+   * for (or that a teammate's join already covered) should just succeed
+   * again, not error. The caller still needs to follow up with
+   * POST /auth/select-org to get a token scoped to this org before calling
+   * org-scoped endpoints (uploads, tournament applications) — see
+   * OrganizationsController.joinViaTournament.
+   */
+  async joinViaTournament(
+    tournamentId: string,
+    userId: string,
+  ): Promise<{
+    organization: Pick<Organization, 'id' | 'name' | 'slug'>;
+    membership: OrgMembership;
+  }> {
+    const tournament = await this.tournamentRepo.findOne({ where: { id: tournamentId } });
+    if (!tournament) {
+      throw new NotFoundException('Tournament not found');
+    }
+
+    const org = await this.orgRepo.findOne({ where: { id: tournament.organizationId } });
+    if (!org) {
+      throw new NotFoundException('Tournament not found');
+    }
+
+    const existingMembership = await this.membershipRepo.findOne({
+      where: { organizationId: org.id, userId },
+    });
+    if (existingMembership) {
+      return {
+        organization: { id: org.id, name: org.name, slug: org.slug },
+        membership: existingMembership,
+      };
+    }
+
+    let membership: OrgMembership;
+    try {
+      membership = await this.membershipRepo.save(
+        this.membershipRepo.create({
+          organizationId: org.id,
+          userId,
+          role: OrgRole.PLAYER,
+          status: OrgMembershipStatus.ACTIVE,
+        }),
+      );
+    } catch (err) {
+      // Race with a concurrent join/invite for the same user+org — same
+      // pattern as join() above.
+      if ((err as { code?: string }).code === '23505') {
+        const raced = await this.membershipRepo.findOne({
+          where: { organizationId: org.id, userId },
+        });
+        if (raced) {
+          return { organization: { id: org.id, name: org.name, slug: org.slug }, membership: raced };
+        }
       }
       throw err;
     }

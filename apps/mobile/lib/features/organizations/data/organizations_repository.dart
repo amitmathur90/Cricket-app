@@ -34,6 +34,21 @@ class OrganizationsRepository {
     return Organization.fromJson(data['organization'] as Map<String, dynamic>);
   }
 
+  /// Self-service join via a public tournament — auto-creates an ACTIVE
+  /// `player`-role membership for the caller if they don't already have one
+  /// (see OrganizationsService.joinViaTournament). Idempotent: calling it
+  /// again for a tournament you've already registered for just returns the
+  /// existing membership's org. The caller must follow up with
+  /// SessionController.selectOrg(organization.id) before calling any
+  /// org-scoped endpoint (uploads, tournament applications) — see
+  /// PublicTournamentDetailScreen's "Register as Player" flow.
+  Future<Organization> joinViaTournament(String tournamentId) async {
+    final response =
+        await _apiClient.post('/organizations/join-via-tournament/$tournamentId');
+    final data = response.data as Map<String, dynamic>;
+    return Organization.fromJson(data['organization'] as Map<String, dynamic>);
+  }
+
   /// org_admin only (enforced server-side): rotates the org's join code.
   Future<Organization> regenerateJoinCode(String organizationId) async {
     final response =

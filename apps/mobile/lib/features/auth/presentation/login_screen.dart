@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/validators.dart';
 import '../application/session_controller.dart';
+import 'widgets/auth_background.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -47,72 +49,106 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sign in')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
+      body: AuthBackground(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Ammct Cricket',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 32),
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    validator: Validators.email,
-                  ),
+                  const AuthLogoMark(radius: 36),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  Text(
+                    'CricketArena',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 28),
+                  Card(
+                    color: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Welcome back',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Sign in to continue',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: AppColors.textSecondary),
+                            ),
+                            const SizedBox(height: 20),
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: const InputDecoration(labelText: 'Email'),
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                              validator: Validators.email,
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _passwordController,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                      _obscurePassword ? Icons.visibility : Icons.visibility_off),
+                                  onPressed: () =>
+                                      setState(() => _obscurePassword = !_obscurePassword),
+                                ),
+                              ),
+                              obscureText: _obscurePassword,
+                              autofillHints: const [AutofillHints.password],
+                              validator: Validators.password,
+                              onFieldSubmitted: (_) => _submit(),
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed:
+                                    session.isBusy ? null : () => context.push(forgotPasswordPath),
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton(
+                              onPressed: session.isBusy ? null : _submit,
+                              child: session.isBusy
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Text('Login'),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              onPressed:
+                                  session.isBusy ? null : () => context.push(mobileOtpLoginPath),
+                              child: const Text('Login with mobile OTP'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    obscureText: _obscurePassword,
-                    autofillHints: const [AutofillHints.password],
-                    validator: Validators.password,
-                    onFieldSubmitted: (_) => _submit(),
                   ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: session.isBusy ? null : () => context.push(forgotPasswordPath),
-                      child: const Text('Forgot password?'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: session.isBusy ? null : _submit,
-                    child: session.isBusy
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Sign in'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: session.isBusy ? null : () => context.push(mobileOtpLoginPath),
-                    child: const Text('Login with mobile OTP'),
-                  ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
                   TextButton(
                     onPressed: session.isBusy ? null : () => context.push(registerPath),
-                    child: const Text("Don't have an account? Register"),
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
+                    child: const Text("Don't have an account? Create Account"),
                   ),
                 ],
               ),

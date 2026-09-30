@@ -27,6 +27,13 @@ final publicTournamentsProvider =
   return ref.watch(publicRepositoryProvider).listTournaments(organizationId);
 });
 
+/// Cross-org discovery feed — backs `DiscoverTournamentsScreen`. No family
+/// key (unlike every other provider in this file): there's no per-org scope
+/// to key on, that's the whole point.
+final publicAllTournamentsProvider = FutureProvider.autoDispose<List<PublicTournament>>((ref) {
+  return ref.watch(publicRepositoryProvider).listAllTournaments();
+});
+
 /// The tournament the Fan Home screen leads with, when the org has more than
 /// one: prefers a `live` tournament (there's a match to headline), else the
 /// soonest-starting `upcoming` one, else the most recently-started one

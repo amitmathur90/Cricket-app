@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
-/// "CricLeague" visual identity — hand-authored `ColorScheme`/`TextTheme`
+/// "CricketArena" visual identity — hand-authored `ColorScheme`/`TextTheme`
 /// plus component themes (cards, app bar, chips) matching the dashboard /
 /// player-profile / live-scoring mockups, layered on top of Material 3.
+/// Every value here derives from `AppColors` tokens rather than hardcoding
+/// hex values, so the app-wide palette can be re-themed by editing
+/// `app_colors.dart` alone. The navy hero background on splash/login/
+/// register is a per-screen `Container` decoration, not part of this
+/// (light-only) theme — see those screens for that treatment.
 class AppTheme {
   AppTheme._();
 

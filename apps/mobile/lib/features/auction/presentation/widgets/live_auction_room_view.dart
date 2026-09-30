@@ -559,7 +559,7 @@ class _StatusIndicator extends StatelessWidget {
     if (connectionStatus != AuctionConnectionStatus.connected) {
       final (label, color) = connectionStatus == AuctionConnectionStatus.connecting
           ? ('CONNECTING', AppColors.amber)
-          : ('DISCONNECTED', AppColors.live);
+          : ('DISCONNECTED', AppColors.negative);
       return StatusPill(label: label, color: color, icon: Icons.wifi_off);
     }
     if (isPaused) {

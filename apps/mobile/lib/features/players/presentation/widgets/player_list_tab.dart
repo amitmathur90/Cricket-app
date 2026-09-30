@@ -253,6 +253,11 @@ class PlayerListTab extends ConsumerWidget {
                           PlayerVerificationStatus.approved ||
                           PlayerVerificationStatus.rejected =>
                             const <PopupMenuEntry<String>>[],
+                          // Defensive fallback — every real
+                          // PlayerVerificationStatus value is already
+                          // handled above; this only exists so the switch
+                          // expression is provably exhaustive to the compiler.
+                          _ => const <PopupMenuEntry<String>>[],
                         },
                         const PopupMenuItem(value: 'rate', child: Text('Set rating')),
                         PopupMenuItem(

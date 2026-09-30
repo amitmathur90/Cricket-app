@@ -18,7 +18,7 @@ import { TournamentsService } from '../tournaments/tournaments.service';
  * pointsSystem, tieBreakerRules, registrationOpensAt/ClosesAt,
  * organizationId, createdByUserId.
  */
-const PUBLIC_TOURNAMENT_SELECT = {
+export const PUBLIC_TOURNAMENT_SELECT = {
   id: true,
   name: true,
   format: true,

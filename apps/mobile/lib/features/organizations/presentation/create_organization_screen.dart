@@ -107,6 +107,11 @@ class _CreateOrganizationScreenState extends ConsumerState<CreateOrganizationScr
                     onPressed: busy ? null : () => context.push(joinOrgPath),
                     child: const Text('Join an organization with a code'),
                   ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: busy ? null : () => context.push(discoverTournamentsPath),
+                    child: const Text('Or discover a public tournament to register for'),
+                  ),
                 ],
               ),
             ),

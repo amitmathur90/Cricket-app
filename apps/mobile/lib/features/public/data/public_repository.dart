@@ -27,6 +27,18 @@ class PublicRepository {
 
   String _base(String organizationId) => '/public/organizations/$organizationId';
 
+  /// `GET public/tournaments` — cross-org discovery, unlike every other
+  /// method here (which requires already knowing an `organizationId`). Each
+  /// result carries its own `organizationId`/`organizationName` (see
+  /// `PublicTournament`'s doc comment) so the caller can link into
+  /// `getTournament`/`listTournaments` above for one specific org.
+  Future<List<PublicTournament>> listAllTournaments() async {
+    final response = await _apiClient.get('/public/tournaments');
+    return (response.data as List<dynamic>)
+        .map((e) => PublicTournament.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<PublicTournament>> listTournaments(String organizationId) async {
     final response = await _apiClient.get('${_base(organizationId)}/tournaments');
     return (response.data as List<dynamic>)
